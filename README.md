@@ -46,6 +46,57 @@ prototipo fa in HTML/JS.
 
 ## Architettura dei dati
 
+### Regola di base: dove vive ogni cosa
+
+Prima dello schema, il principio che regge tutto il resto:
+
+> **L'audio non passa mai da Firestore.** Un file audio sta su MEGA, oppure sul
+> telefono, oppure in entrambi i posti. Firestore tiene tutto ciò che audio non
+> è: chi siamo, quali cartelle sono collegate, i commenti, i voti, i contatori.
+
+| Cosa | Dove vive | Perché |
+|---|---|---|
+| File audio | MEGA, e sul telefono se scaricato | MEGA è già il posto dove il gruppo tiene le prove |
+| Metadati traccia (titolo, durata, waveform, ascolti) | Firestore | leggeri, servono a tutti anche senza scaricare l'audio |
+| Commenti | Firestore | sono il motivo per cui l'app esiste |
+| Voti a stella | Firestore | devono vedersi fra i membri del gruppo |
+| Cartelle collegate e link MEGA | Firestore | così basta che uno colleghi la cartella e la vedono tutti |
+| Profili (nome, colore) | Firestore | servono per attribuire i commenti |
+| Identità propria (`appUid`) | Solo sul telefono | in `EncryptedSharedPreferences`, mai in rete |
+| Elenco dei file scaricati in locale | Solo sul telefono | in Room; è una scelta di questo telefono, non del gruppo |
+
+Firestore è un database di documenti, non un archivio di file: metterci dentro
+l'audio sarebbe costoso e fuori dal suo scopo. MEGA fa già quel lavoro.
+
+**Attenzione al nome:** la collection Firestore si chiama `tracce/`, ma un
+documento lì dentro **non contiene audio**. È un cartellino segnaletico: porta
+`idFileMega`, cioè il riferimento con cui andare a prendere il file vero su
+MEGA. Quando in questo documento si legge "traccia", il significato dipende dal
+contesto — il documento di metadati, oppure il file audio. Non sono la stessa
+cosa e non stanno nello stesso posto.
+
+### Ciclo di vita di una traccia
+
+Come si incastrano i tre pezzi, dall'inizio alla fine:
+
+1. **Collegamento** — qualcuno incolla il link di una cartella MEGA. L'app
+   interroga MEGA, si fa dare l'elenco dei file e scrive un documento in
+   `tracce/` per ognuno. Il link finisce in `cartelle/`, così anche gli altri
+   quattro se la ritrovano senza incollare niente.
+2. **Ascolto in streaming** — al play l'app chiede a MEGA un URL temporaneo per
+   quel file e lo passa a ExoPlayer. Niente resta sul telefono. Se l'URL scade a
+   metà ascolto se ne chiede un altro e si riprende dallo stesso punto.
+3. **Download** — l'utente decide esplicitamente di scaricare. Il file va in
+   `cacheDir/audio/` e viene registrato in Room.
+4. **Ascolto in locale** — da quel momento il play usa il file sul telefono e
+   non tocca la rete. Il passaggio è automatico: decide la presenza del record
+   in Room, non l'utente.
+5. **Rimozione** — "Rimuovi dal telefono" cancella file e record. Il play
+   successivo torna in streaming da solo.
+
+In tutti e cinque i passaggi, commenti e voti stanno su Firestore e non
+cambiano: si possono leggere e scrivere anche su una traccia mai scaricata.
+
 ### Firestore — schema completo
 
 ```
@@ -61,10 +112,10 @@ cartelle/{cartellaId}
   aggiuntoIl: timestamp
   aggiuntoDa: string       // appUid di chi l'ha aggiunta
 
-tracce/{tracciaId}
+tracce/{tracciaId}         // SOLO metadati: l'audio sta su MEGA, mai qui
   cartellaId: string
   nomeFile: string
-  idFileMega: string       // node handle del file su MEGA
+  idFileMega: string       // node handle: con questo si va a prendere il file su MEGA
   durataSecondi: number
   waveformData: array<number>   // ~200 float 0.0–1.0. null finché non calcolata
   ascolti: number               // contatore incrementale
