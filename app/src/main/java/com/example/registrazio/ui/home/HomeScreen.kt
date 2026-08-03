@@ -1,0 +1,348 @@
+package com.example.registrazio.ui.home
+
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.example.registrazio.data.model.Cartella
+import com.example.registrazio.ui.components.AppIconButton
+import com.example.registrazio.ui.components.AppTextField
+import com.example.registrazio.ui.components.appBorder
+import com.example.registrazio.ui.components.pressScale
+import com.example.registrazio.ui.theme.AppIcon
+import com.example.registrazio.ui.theme.AppIcons
+import com.example.registrazio.ui.theme.AppTheme
+import com.example.registrazio.ui.theme.MainPadding
+import com.example.registrazio.ui.theme.Radius
+
+/**
+ * Elenco delle cartelle di prove, più la ghost card per collegarne una nuova.
+ */
+@Composable
+fun HomeScreen(
+    cartelle: List<Cartella>,
+    conteggioTracce: (String) -> Int,
+    cartelleRinominabili: Set<String>,
+    onApriCartella: (String) -> Unit,
+    onRinomina: (String, String) -> Unit,
+    onCollegaLink: (String) -> String?,
+    modifier: Modifier = Modifier,
+    contentPadding: androidx.compose.foundation.layout.PaddingValues
+) {
+    // La cartella appena collegata si apre già in modalità rinomina: il nome
+    // proposto ("Cartella A1b2C3") non dice nulla, tanto vale chiederlo subito.
+    var daRinominare by remember { mutableStateOf<String?>(null) }
+
+    LazyColumn(modifier.fillMaxWidth(), contentPadding = contentPadding) {
+        items(cartelle, key = { it.id }) { cartella ->
+            FolderCard(
+                nome = cartella.nome,
+                numTracce = conteggioTracce(cartella.id),
+                rinominabile = cartella.id in cartelleRinominabili,
+                rinominaSubito = daRinominare == cartella.id,
+                onClick = { onApriCartella(cartella.id) },
+                onRinomina = { nuovo ->
+                    onRinomina(cartella.id, nuovo)
+                    daRinominare = null
+                }
+            )
+            Spacer(Modifier.height(6.dp))
+        }
+
+        item {
+            GhostCard(
+                onCollega = { link ->
+                    val errore = onCollegaLink(link)
+                    if (errore == null) daRinominare = Cartella.parseFolderId(link)
+                    errore
+                }
+            )
+        }
+    }
+}
+
+/**
+ * `.folder-card`. Doppio tap sul nome per rinominare — stessa scorciatoia
+ * che il prototipo usa sui titoli delle tracce.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun FolderCard(
+    nome: String,
+    numTracce: Int,
+    rinominabile: Boolean,
+    rinominaSubito: Boolean,
+    onClick: () -> Unit,
+    onRinomina: (String) -> Unit
+) {
+    val colors = AppTheme.colors
+    val interaction = remember { MutableInteractionSource() }
+    var inRinomina by remember { mutableStateOf(false) }
+    var bozza by remember(nome) { mutableStateOf(nome) }
+    val focusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(rinominaSubito) {
+        if (rinominaSubito) {
+            bozza = nome
+            inRinomina = true
+        }
+    }
+    LaunchedEffect(inRinomina) {
+        if (inRinomina) runCatching { focusRequester.requestFocus() }
+    }
+
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .pressScale(interaction)
+            .clip(Radius.cardMd)
+            .background(colors.surface)
+            .appBorder(colors.border, Radius.md)
+            .clickable(
+                interactionSource = interaction,
+                indication = null,
+                enabled = !inRinomina,
+                onClick = onClick
+            )
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(11.dp)
+    ) {
+        Box(
+            Modifier
+                .size(38.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(colors.accentSoft),
+            contentAlignment = Alignment.Center
+        ) {
+            AppIcon(AppIcons.Folder, 19.dp, colors.accent)
+        }
+
+        Column(Modifier.weight(1f)) {
+            if (inRinomina) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    AppTextField(
+                        value = bozza,
+                        onValueChange = { bozza = it },
+                        fontSize = 14.5.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        radius = 6.dp,
+                        modifier = Modifier.weight(1f).focusRequester(focusRequester)
+                    )
+                    Spacer(Modifier.size(4.dp))
+                    ConfirmChip { inRinomina = false; onRinomina(bozza) }
+                }
+            } else {
+                Text(
+                    nome,
+                    color = colors.text,
+                    fontSize = 14.5.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = if (rinominabile) {
+                        Modifier.combinedClickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onDoubleClick = { bozza = nome; inRinomina = true },
+                            onClick = onClick
+                        )
+                    } else Modifier
+                )
+            }
+            Spacer(Modifier.height(1.dp))
+            Text(
+                "$numTracce ${if (numTracce == 1) "traccia" else "tracce"}",
+                color = colors.textMuted,
+                fontSize = 12.sp
+            )
+        }
+
+        AppIcon(AppIcons.ChevronRightSmall, 15.dp, colors.textMuted)
+    }
+}
+
+/** `.rename-confirm`: pallino con la spunta accanto al campo di rinomina. */
+@Composable
+private fun ConfirmChip(onClick: () -> Unit) {
+    val colors = AppTheme.colors
+    Box(
+        Modifier
+            .size(22.dp)
+            .clip(androidx.compose.foundation.shape.CircleShape)
+            .background(colors.surfaceAlt)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClick
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        AppIcon(AppIcons.Check, 13.dp, colors.textSecondary)
+    }
+}
+
+/**
+ * `.ghost-card`: bordo tratteggiato, si apre a fisarmonica sul campo del link.
+ */
+@Composable
+private fun GhostCard(onCollega: (String) -> String?) {
+    val colors = AppTheme.colors
+    var aperta by remember { mutableStateOf(false) }
+    var link by remember { mutableStateOf("") }
+    var errore by remember { mutableStateOf<String?>(null) }
+
+    fun chiudi() {
+        aperta = false
+        link = ""
+        errore = null
+    }
+
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(Radius.cardMd)
+            .dashedBorder(colors.border, Radius.md)
+    ) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null
+                ) { if (aperta) chiudi() else aperta = true }
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(11.dp)
+        ) {
+            Box(
+                Modifier
+                    .size(38.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(colors.surfaceAlt),
+                contentAlignment = Alignment.Center
+            ) {
+                AppIcon(AppIcons.Link, 11.dp, colors.textMuted)
+            }
+            Column(Modifier.weight(1f)) {
+                Text(
+                    "Collega un link Mega",
+                    color = colors.textSecondary,
+                    fontSize = 14.5.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Spacer(Modifier.height(1.dp))
+                Text("Aggiungi una cartella al gruppo", color = colors.textMuted, fontSize = 12.sp)
+            }
+            AppIcon(
+                if (aperta) AppIcons.ChevronUp else AppIcons.ChevronDown,
+                13.dp,
+                colors.textMuted
+            )
+        }
+
+        AnimatedVisibility(
+            visible = aperta,
+            enter = expandVertically(tween(200)),
+            exit = shrinkVertically(tween(160))
+        ) {
+            Column(Modifier.padding(start = 12.dp, end = 12.dp, bottom = 14.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    AppTextField(
+                        value = link,
+                        onValueChange = { link = it; errore = null },
+                        placeholder = "Incolla il link Mega…",
+                        modifier = Modifier.weight(1f)
+                    )
+                    GhostIconButton(AppIcons.X, "Annulla", colors.surfaceAlt, colors.textSecondary) {
+                        chiudi()
+                    }
+                    GhostIconButton(AppIcons.Check, "Collega", colors.accent, Color.White) {
+                        errore = onCollega(link)
+                        if (errore == null) chiudi()
+                    }
+                }
+                errore?.let {
+                    Spacer(Modifier.height(8.dp))
+                    Text(it, color = colors.danger, fontSize = 12.5.sp, lineHeight = 17.5.sp)
+                }
+            }
+        }
+    }
+}
+
+/** `.ghost-icon-btn`: cerchio 32dp accanto al campo del link. */
+@Composable
+private fun GhostIconButton(
+    icona: com.example.registrazio.ui.theme.AppIconSpec,
+    descrizione: String,
+    sfondo: Color,
+    tinta: Color,
+    onClick: () -> Unit
+) {
+    AppIconButton(
+        icon = icona,
+        contentDescription = descrizione,
+        onClick = onClick,
+        size = 32.dp,
+        iconSize = 14.dp,
+        tint = tinta,
+        background = sfondo
+    )
+}
+
+/** `border-style: dashed` — Compose non ce l'ha, va disegnato. */
+private fun Modifier.dashedBorder(colore: Color, radius: Dp): Modifier = drawBehind {
+    val stroke = 1.dp.toPx()
+    drawRoundRect(
+        color = colore,
+        style = Stroke(
+            width = stroke,
+            pathEffect = PathEffect.dashPathEffect(floatArrayOf(6.dp.toPx(), 4.dp.toPx()))
+        ),
+        cornerRadius = androidx.compose.ui.geometry.CornerRadius(radius.toPx()),
+        topLeft = androidx.compose.ui.geometry.Offset(stroke / 2, stroke / 2),
+        size = androidx.compose.ui.geometry.Size(size.width - stroke, size.height - stroke)
+    )
+}
