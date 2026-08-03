@@ -723,7 +723,7 @@ perché la BOM non le mostra): Firestore `26.5.0`, Auth `24.2.0`.
 | Foglio account + strumenti di test | ✅ | |
 | Identità persistente (`appUid`) | ✅ | `EncryptedSharedPreferences` con fallback |
 | Riproduzione audio | 🟡 | timer finto a 250 ms in `AppViewModel`, ExoPlayer mai istanziato |
-| Collegamento di una cartella MEGA | ✅ | **provato su una cartella vera**: nome cartella e nomi file decifrati |
+| Collegamento di una cartella MEGA | ✅ | **provato su una cartella vera**; ricollegare la stessa cartella la ricarica |
 | Durata delle tracce da MEGA | ❌ | resta 0 (mostrata `--:--`) finché non apriremo il file con il player |
 | Waveform | 🟡 | equalizzatore animato decorativo, nessun dato reale |
 | Persistenza profili e cartelle | 🟡 | `ProfiliStore` = SharedPreferences + Gson, sta al posto di Firestore |
@@ -840,7 +840,24 @@ molto poco leggibili.
 *Da ricordare:* `.gitignore` non è retroattivo. Se un file ignorato compare
 ancora nei cambiamenti, va tolto dall'indice a mano.
 
-#### 7. Warning KSP sui source set Kotlin
+#### 7. La radice di una cartella condivisa non e' `t = 2`
+
+*Sintomo:* la cartella si collegava ma restava chiamata "Cartella A6kViD"
+invece di prendere il nome vero da MEGA.
+
+*Causa:* cercavo il nodo radice fra quelli con `t = 2`. Quel tipo e' la radice
+dell'**account** e in una risposta su link pubblico non compare proprio: la
+radice della cartella condivisa e' un nodo cartella normale, riconoscibile
+perche' il suo `h` coincide con l'id del link.
+
+*Secondo motivo, indipendente:* `ProfiliStore.registraCartella` usciva subito se
+la cartella era gia' salvata, quindi il nome non veniva mai aggiornato. Anche
+sistemata la radice, al riavvio sarebbe tornato il nome di ripiego.
+
+*Da ricordare:* quando un dato sbagliato **sopravvive a un fix**, i motivi sono
+due e vanno cercati entrambi — uno che lo produce e uno che lo conserva.
+
+#### 8. Warning KSP sui source set Kotlin
 
 *Fix applicato:* `android.disallowKotlinSourceSets=false` in `gradle.properties`.
 

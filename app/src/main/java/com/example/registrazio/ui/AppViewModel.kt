@@ -364,10 +364,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             }
             return
         }
-        if (_state.value.cartelle.any { it.megaFolderId == linkMega.folderId }) {
-            aggiornaCollegamento { it.copy(errore = "Questa cartella è già collegata.") }
-            return
-        }
+        // Ricollegare una cartella già presente la ricarica invece di dare errore:
+        // finché le tracce non stanno su Firestore, è l'unico modo di riaverle
+        // dopo aver chiuso l'app senza dover prima scollegare la cartella.
+        val giaCollegata = _state.value.cartelle.any { it.megaFolderId == linkMega.folderId }
 
         aggiornaCollegamento { it.copy(inCorso = true, errore = null) }
 
@@ -383,12 +383,18 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     return@launch
                 }
 
+                val ripiego = Cartella.suggestName(linkMega.folderId)
+                val nomePrecedente = _state.value.cartelle
+                    .find { it.megaFolderId == linkMega.folderId }?.nome
+
                 val cartella = Cartella(
                     id = linkMega.folderId,
-                    // Il nome vero della cartella su MEGA, se siamo riusciti a
-                    // decifrarlo. "Cartella A6kViD" resta solo come ripiego.
-                    nome = risultato.nomeCartella?.takeIf { it.isNotBlank() }
-                        ?: Cartella.suggestName(linkMega.folderId),
+                    // Un nome scelto a mano vince su quello di MEGA: se l'hai
+                    // rinominata, ricaricarla non deve disfare la tua scelta.
+                    // Il ripiego "Cartella A6kViD" invece si lascia sostituire.
+                    nome = nomePrecedente?.takeIf { it.isNotBlank() && it != ripiego }
+                        ?: risultato.nomeCartella?.takeIf { it.isNotBlank() }
+                        ?: ripiego,
                     linkMega = link.trim(),
                     megaFolderId = linkMega.folderId,
                     aggiuntoDa = _state.value.identita?.appUid.orEmpty(),
@@ -411,19 +417,27 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     )
                 }
 
-                _state.update {
-                    it.copy(
-                        cartelle = it.cartelle + cartella,
-                        tracce = it.tracce + nuoveTracce,
-                        collegamento = it.collegamento.copy(
+                _state.update { stato ->
+                    val cartelle =
+                        if (giaCollegata) stato.cartelle.map { if (it.id == cartella.id) cartella else it }
+                        else stato.cartelle + cartella
+                    stato.copy(
+                        cartelle = cartelle,
+                        // Le tracce della cartella vengono sostituite in blocco: se
+                        // su MEGA un file è sparito, deve sparire anche qui.
+                        tracce = stato.tracce.filterNot { it.cartellaId == cartella.id } + nuoveTracce,
+                        collegamento = stato.collegamento.copy(
                             inCorso = false,
                             errore = null,
-                            completati = it.collegamento.completati + 1,
-                            chiediNome = risultato.nomeCartella.isNullOrBlank()
+                            completati = stato.collegamento.completati + 1,
+                            chiediNome = !giaCollegata && risultato.nomeCartella.isNullOrBlank()
                         )
                     )
                 }
-                mostra("Collegate ${file.size} tracce")
+                mostra(
+                    if (giaCollegata) "Cartella aggiornata — ${file.size} tracce"
+                    else "Collegate ${file.size} tracce"
+                )
             }
 
             esito.onFailure { errore ->
@@ -484,6 +498,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         if (pulito.isEmpty()) return
         _state.update {
             it.copy(cartelle = it.cartelle.map { c -> if (c.id == cartellaId) c.copy(nome = pulito) else c })
+        }
+        // Va salvata, non solo mostrata: altrimenti il nome scelto sparisce alla
+        // prima chiusura dell'app. Le cartelle demo non stanno nello store e
+        // vanno lasciate fuori, o al riavvio comparirebbero doppie.
+        _state.value.cartelle.find { it.id == cartellaId }?.let { cartella ->
+            if (profiliStore.cartelle().any { it.id == cartellaId }) {
+                profiliStore.registraCartella(cartella)
+            }
         }
     }
 

@@ -39,10 +39,20 @@ class ProfiliStore(context: Context) {
         prefs.edit().putString(KEY_UTENTI, gson.toJson(aggiornati)).apply()
     }
 
+    /**
+     * Salva la cartella, sostituendo quella con lo stesso `megaFolderId` se c'è.
+     *
+     * Sostituire invece di saltare: ricollegando una cartella se ne rileggono
+     * nome e contenuto da MEGA, e ignorare la nuova versione vorrebbe dire
+     * tenersi per sempre il nome di ripiego salvato la prima volta.
+     */
     fun registraCartella(cartella: Cartella) {
         val attuali = cartelle()
-        if (attuali.any { it.megaFolderId == cartella.megaFolderId }) return
-        prefs.edit().putString(KEY_CARTELLE, gson.toJson(attuali + cartella)).apply()
+        val esistente = attuali.indexOfFirst { it.megaFolderId == cartella.megaFolderId }
+        val aggiornate =
+            if (esistente >= 0) attuali.toMutableList().also { it[esistente] = cartella }
+            else attuali + cartella
+        prefs.edit().putString(KEY_CARTELLE, gson.toJson(aggiornate)).apply()
     }
 
     fun rimuoviCartella(id: String) {

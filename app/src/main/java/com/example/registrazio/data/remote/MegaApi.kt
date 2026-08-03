@@ -129,13 +129,17 @@ class MegaApi(
 
         for (elemento in nodi) {
             val nodo = elemento as? JsonObject ?: continue
-            // t = 0 è un file; 1 è una cartella, 2 è la radice della condivisione
             val tipo = nodo.get("t")?.asInt
 
-            if (tipo == 2) {
-                nomeCartella = nomeDelNodoRadice(nodo, link.chiave)
+            // La radice della cartella condivisa è il nodo il cui handle coincide
+            // con l'id del link. Non è `t = 2`: quello è la radice dell'account,
+            // che in una risposta su link pubblico non compare proprio.
+            if (nodo.get("h")?.asString == link.folderId || tipo == 2) {
+                nomeCartella = nomeDelNodoRadice(nodo, link.chiave) ?: nomeCartella
                 continue
             }
+
+            // t = 0 è un file, 1 una cartella: le sottocartelle non le seguiamo
             if (tipo != 0) continue
             fileTotali++
 
