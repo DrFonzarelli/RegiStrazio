@@ -1,0 +1,448 @@
+package com.example.registrazio.ui
+
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import com.example.registrazio.data.DemoData
+import com.example.registrazio.data.local.ProfiliStore
+import com.example.registrazio.data.model.Cartella
+import com.example.registrazio.data.model.Commento
+import com.example.registrazio.data.model.Traccia
+import com.example.registrazio.data.model.Utente
+import com.example.registrazio.domain.identity.IdentityManager
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import java.util.UUID
+
+sealed interface Schermata {
+    data object Gate : Schermata
+    data object Home : Schermata
+    data class DettaglioCartella(val cartellaId: String) : Schermata
+}
+
+enum class Ordinamento { DEFAULT, PREFERITE }
+
+/**
+ * Cosa sta suonando, indipendentemente da quale cartella stai guardando.
+ * Una traccia lasciata in play resta qui anche se la sua card non è più a schermo.
+ */
+data class StatoRiproduzione(
+    val tracciaId: String? = null,
+    val inRiproduzione: Boolean = false,
+    val posizioneSecondi: Float = 0f
+)
+
+/** Avanzamento dello "Scarica tutte" sulla cartella aperta. */
+data class StatoBulkDownload(
+    val cartellaId: String,
+    val completate: Int,
+    val totali: Int
+)
+
+/** Messaggio effimero; [seq] serve a rimostrare lo stesso testo due volte di fila. */
+data class Messaggio(val testo: String, val seq: Long)
+
+data class AppState(
+    val temaScuro: Boolean = false,
+    val identita: Utente? = null,
+    val schermata: Schermata = Schermata.Gate,
+    val cartelle: List<Cartella> = emptyList(),
+    val tracce: List<Traccia> = emptyList(),
+    val profiliDisponibili: List<Utente> = emptyList(),
+    val ordinamento: Ordinamento = Ordinamento.DEFAULT,
+    val riproduzione: StatoRiproduzione = StatoRiproduzione(),
+    val bulkDownload: StatoBulkDownload? = null,
+    val messaggio: Messaggio? = null
+)
+
+class AppViewModel(app: Application) : AndroidViewModel(app) {
+
+    private val identityManager = IdentityManager(app)
+    private val profiliStore = ProfiliStore(app)
+
+    private val _state = MutableStateFlow(AppState())
+    val state: StateFlow<AppState> = _state.asStateFlow()
+
+    private var playJob: Job? = null
+    private var bulkJob: Job? = null
+    private var seqMessaggi = 0L
+
+    /** Secondi ascoltati di fila nella sessione corrente, per il conteggio degli ascolti. */
+    private var ascoltoAccumulato = 0f
+    private var ascoltoGiaContato = false
+
+    init {
+        val identita = identityManager.identita
+        _state.update {
+            it.copy(
+                identita = identita,
+                schermata = if (identita != null) Schermata.Home else Schermata.Gate,
+                cartelle = DemoData.cartelle + profiliStore.cartelle(),
+                tracce = DemoData.tracce,
+                profiliDisponibili = profiliStore.profili()
+            )
+        }
+    }
+
+    // ---------- tema ----------
+
+    fun cambiaTema() = _state.update { it.copy(temaScuro = !it.temaScuro) }
+
+    // ---------- identità ----------
+
+    /**
+     * Percorso A del Gate. Il nome duplicato viene rifiutato: è l'unico appiglio
+     * che ha l'utente per riconoscersi nella lista di recupero, due "Luca"
+     * renderebbero quella schermata inutilizzabile.
+     */
+    fun creaAccount(nome: String, colore: String): String? {
+        val pulito = nome.trim()
+        if (pulito.isEmpty()) return "Scrivi un nome."
+        val esiste = _state.value.profiliDisponibili.any { it.nome.equals(pulito, ignoreCase = true) }
+        if (esiste) return "Questo nome esiste già nel gruppo. Usa \"Ho già un account\" per recuperarlo."
+
+        val utente = identityManager.creaNuovaIdentita(pulito, colore)
+        profiliStore.registraProfilo(utente)
+        _state.update {
+            it.copy(
+                identita = utente,
+                profiliDisponibili = profiliStore.profili(),
+                schermata = Schermata.Home
+            )
+        }
+        mostra("Benvenuto, ${utente.nome}!")
+        return null
+    }
+
+    /** Percorso B del Gate: l'utente ha riconosciuto il proprio avatar. */
+    fun entraComeUtente(utente: Utente) {
+        identityManager.adottaIdentita(utente)
+        _state.update { it.copy(identita = utente, schermata = Schermata.Home) }
+        mostra("Bentornato, ${utente.nome}!")
+    }
+
+    // ---------- navigazione ----------
+
+    fun apriCartella(cartellaId: String) {
+        _state.update { it.copy(schermata = Schermata.DettaglioCartella(cartellaId)) }
+    }
+
+    fun tornaHome() = _state.update { it.copy(schermata = Schermata.Home) }
+
+    fun cambiaOrdinamento() = _state.update {
+        it.copy(
+            ordinamento = if (it.ordinamento == Ordinamento.PREFERITE) Ordinamento.DEFAULT
+            else Ordinamento.PREFERITE
+        )
+    }
+
+    fun aggiorna() = mostra("Aggiornato — nessuna novità")
+
+    // ---------- riproduzione ----------
+
+    fun togglePlay(tracciaId: String) {
+        val r = _state.value.riproduzione
+        if (r.tracciaId == tracciaId && r.inRiproduzione) mettiInPausa()
+        else avvia(tracciaId, if (r.tracciaId == tracciaId) r.posizioneSecondi else 0f)
+    }
+
+    /** Salta a un punto e riparte: usato dai chip dei commenti e dal grafico dettagli. */
+    fun riproduciDa(tracciaId: String, secondi: Float) = avvia(tracciaId, secondi)
+
+    /** Trascinamento del playhead: sposta senza cambiare stato play/pausa. */
+    fun spostaCursore(tracciaId: String, secondi: Float) {
+        val durata = traccia(tracciaId)?.durataSecondi?.toFloat() ?: return
+        _state.update {
+            it.copy(
+                riproduzione = it.riproduzione.copy(
+                    tracciaId = tracciaId,
+                    posizioneSecondi = secondi.coerceIn(0f, durata)
+                )
+            )
+        }
+    }
+
+    private fun avvia(tracciaId: String, da: Float) {
+        val durata = traccia(tracciaId)?.durataSecondi?.toFloat() ?: return
+        playJob?.cancel()
+        ascoltoAccumulato = 0f
+        ascoltoGiaContato = false
+        _state.update {
+            it.copy(
+                riproduzione = StatoRiproduzione(
+                    tracciaId = tracciaId,
+                    inRiproduzione = true,
+                    posizioneSecondi = da.coerceIn(0f, durata)
+                )
+            )
+        }
+        // Finto avanzamento a 250ms come nel prototipo: ExoPlayer prenderà
+        // il posto di questo loop senza che la UI debba cambiare.
+        playJob = viewModelScope.launch {
+            while (isActive) {
+                delay(TICK_MS)
+                avanzaDiUnTick(tracciaId, durata)
+            }
+        }
+    }
+
+    private fun avanzaDiUnTick(tracciaId: String, durata: Float) {
+        val passo = TICK_MS / 1000f
+        _state.update { s ->
+            val r = s.riproduzione
+            if (r.tracciaId != tracciaId || !r.inRiproduzione) return@update s
+
+            var pos = r.posizioneSecondi + passo
+            if (pos >= durata) {
+                pos = 0f
+                ascoltoAccumulato = 0f
+                ascoltoGiaContato = false
+            }
+
+            // Un ascolto conta dopo 30 secondi effettivi, non al primo tap.
+            var ascoltoInPiu = 0
+            if (!ascoltoGiaContato) {
+                ascoltoAccumulato += passo
+                if (ascoltoAccumulato >= SOGLIA_ASCOLTO) {
+                    ascoltoGiaContato = true
+                    ascoltoInPiu = 1
+                }
+            }
+
+            val indice = ((pos / durata) * BUCKETS).toInt().coerceIn(0, BUCKETS - 1)
+            s.copy(
+                riproduzione = r.copy(posizioneSecondi = pos),
+                tracce = s.tracce.map { t ->
+                    if (t.id != tracciaId) t
+                    else t.copy(
+                        ascolti = t.ascolti + ascoltoInPiu,
+                        playBuckets = t.playBuckets.mapIndexed { i, v ->
+                            if (i == indice) v + passo else v
+                        }
+                    )
+                }
+            )
+        }
+    }
+
+    fun mettiInPausa() {
+        playJob?.cancel()
+        playJob = null
+        _state.update { it.copy(riproduzione = it.riproduzione.copy(inRiproduzione = false)) }
+    }
+
+    // ---------- voti ----------
+
+    fun cambiaVoto(tracciaId: String) = aggiornaTraccia(tracciaId) { it.conVotoSuccessivo() }
+
+    // ---------- commenti ----------
+
+    fun aggiungiCommento(tracciaId: String, secondi: Float, testo: String) {
+        val io = _state.value.identita ?: return
+        val nuovo = Commento(
+            id = UUID.randomUUID().toString(),
+            tracciaId = tracciaId,
+            appUid = io.appUid,
+            autoreNome = io.nome,
+            autoreColore = io.colore,
+            timestampSecondi = secondi,
+            testo = testo.trim()
+        )
+        aggiornaTraccia(tracciaId) { t ->
+            t.copy(commenti = (t.commenti + nuovo).sortedBy { it.timestampSecondi })
+        }
+        mostra("Commento salvato")
+    }
+
+    fun modificaCommento(tracciaId: String, commentoId: String, secondi: Float, testo: String) {
+        aggiornaTraccia(tracciaId) { t ->
+            t.copy(
+                commenti = t.commenti
+                    .map { c ->
+                        if (c.id == commentoId) c.copy(timestampSecondi = secondi, testo = testo.trim())
+                        else c
+                    }
+                    .sortedBy { it.timestampSecondi }
+            )
+        }
+        mostra("Commento aggiornato")
+    }
+
+    fun eliminaCommento(tracciaId: String, commentoId: String) {
+        aggiornaTraccia(tracciaId) { t -> t.copy(commenti = t.commenti.filterNot { it.id == commentoId }) }
+        mostra("Commento eliminato")
+    }
+
+    // ---------- download ----------
+
+    fun cambiaDownload(tracciaId: String) {
+        val scaricataOra = !(traccia(tracciaId)?.scaricata ?: return)
+        aggiornaTraccia(tracciaId) {
+            it.copy(
+                scaricata = scaricataOra,
+                downloadEvents = it.downloadEvents + if (scaricataOra) 1 else 0
+            )
+        }
+        mostra(
+            if (scaricataOra) "Traccia scaricata in locale"
+            else "Rimossa dal locale — tornerà in streaming"
+        )
+    }
+
+    fun scaricaTutte(cartellaId: String) {
+        if (bulkJob?.isActive == true) return
+        val mancanti = traccePerCartella(cartellaId).filterNot { it.scaricata }
+        if (mancanti.isEmpty()) {
+            mostra("Sono già tutte scaricate")
+            return
+        }
+        val totali = traccePerCartella(cartellaId).size
+        val giaFatte = totali - mancanti.size
+
+        bulkJob = viewModelScope.launch {
+            mancanti.forEachIndexed { i, t ->
+                aggiornaTraccia(t.id) {
+                    it.copy(scaricata = true, downloadEvents = it.downloadEvents + 1)
+                }
+                _state.update { s ->
+                    s.copy(bulkDownload = StatoBulkDownload(cartellaId, giaFatte + i + 1, totali))
+                }
+                delay(PASSO_BULK_MS)
+            }
+            _state.update { it.copy(bulkDownload = null) }
+            mostra("Tutte le tracce sono state scaricate")
+        }
+    }
+
+    // ---------- cartelle ----------
+
+    fun collegaCartella(link: String): String? {
+        val folderId = Cartella.parseFolderId(link)
+            ?: return "Non sembra un link di cartella Mega valido."
+        if (_state.value.cartelle.any { it.megaFolderId == folderId }) {
+            mostra("Questa cartella è già collegata.")
+            return null
+        }
+        val cartella = Cartella(
+            id = folderId,
+            nome = Cartella.suggestName(folderId),
+            linkMega = link,
+            megaFolderId = folderId,
+            aggiuntoDa = _state.value.identita?.appUid.orEmpty()
+        )
+        profiliStore.registraCartella(cartella)
+        // Placeholder finché la lista file non arriverà davvero dall'API MEGA.
+        val nuoveTracce = DemoData.generateFakeTracks(folderId, 4)
+        _state.update {
+            it.copy(cartelle = it.cartelle + cartella, tracce = it.tracce + nuoveTracce)
+        }
+        return null
+    }
+
+    fun rimuoviCartella(cartellaId: String) {
+        val nome = _state.value.cartelle.find { it.id == cartellaId }?.nome ?: return
+        profiliStore.rimuoviCartella(cartellaId)
+        _state.update {
+            it.copy(
+                cartelle = it.cartelle.filterNot { c -> c.id == cartellaId },
+                tracce = it.tracce.filterNot { t -> t.cartellaId == cartellaId }
+            )
+        }
+        mostra("Collegamento a \"$nome\" rimosso.")
+    }
+
+    fun rinominaCartella(cartellaId: String, nome: String) {
+        val pulito = nome.trim()
+        if (pulito.isEmpty()) return
+        _state.update {
+            it.copy(cartelle = it.cartelle.map { c -> if (c.id == cartellaId) c.copy(nome = pulito) else c })
+        }
+    }
+
+    fun rinominaTraccia(tracciaId: String, titolo: String) {
+        val pulito = titolo.trim()
+        if (pulito.isEmpty()) return
+        aggiornaTraccia(tracciaId) { it.copy(titolo = pulito) }
+    }
+
+    // ---------- strumenti di test ----------
+
+    fun simulaReinstallazione() {
+        identityManager.dimentica()
+        mettiInPausa()
+        _state.update {
+            it.copy(
+                identita = null,
+                schermata = Schermata.Gate,
+                cartelle = DemoData.cartelle,
+                tracce = DemoData.tracce
+            )
+        }
+        mostra("Dispositivo reimpostato — recupera il tuo account per ritrovare le cartelle.")
+    }
+
+    fun svuotaCloudSimulato() {
+        profiliStore.svuota()
+        identityManager.dimentica()
+        mettiInPausa()
+        _state.update {
+            AppState(
+                temaScuro = it.temaScuro,
+                cartelle = DemoData.cartelle,
+                tracce = DemoData.tracce
+            )
+        }
+        mostra("Cloud simulato svuotato completamente.")
+    }
+
+    // ---------- lettura ----------
+
+    fun traccia(id: String): Traccia? = _state.value.tracce.find { it.id == id }
+
+    fun traccePerCartella(cartellaId: String): List<Traccia> =
+        _state.value.tracce.filter { it.cartellaId == cartellaId }
+
+    fun messaggioMostrato() = _state.update { it.copy(messaggio = null) }
+
+    // ---------- helper ----------
+
+    private fun mostra(testo: String) {
+        _state.update { it.copy(messaggio = Messaggio(testo, ++seqMessaggi)) }
+    }
+
+    private fun aggiornaTraccia(id: String, blocco: (Traccia) -> Traccia) {
+        _state.update { s ->
+            s.copy(tracce = s.tracce.map { if (it.id == id) blocco(it) else it })
+        }
+    }
+
+    override fun onCleared() {
+        playJob?.cancel()
+        bulkJob?.cancel()
+        super.onCleared()
+    }
+
+    private companion object {
+        const val TICK_MS = 250L
+        const val PASSO_BULK_MS = 380L
+        const val SOGLIA_ASCOLTO = 30f
+        const val BUCKETS = 24
+    }
+}
+
+/**
+ * Ordina le tracce come fa `applySort` nel prototipo: a parità di punteggio
+ * resta l'ordine originale di MEGA, così la lista non balla a ogni voto.
+ */
+fun List<Traccia>.ordinate(modo: Ordinamento): List<Traccia> = when (modo) {
+    Ordinamento.DEFAULT -> this
+    Ordinamento.PREFERITE -> sortedWith(
+        compareByDescending<Traccia> { it.punteggio }.thenBy { indexOf(it) }
+    )
+}

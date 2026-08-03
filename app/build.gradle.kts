@@ -58,7 +58,9 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.ktx)
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0")
+    // Stessa versione di lifecycle-runtime: moduli lifecycle disallineati
+    // si trascinano dietro copie diverse di lifecycle-viewmodel.
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
 
     // Navigation Compose
     implementation("androidx.navigation:navigation-compose:2.7.7")
@@ -70,10 +72,11 @@ dependencies {
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.1")
 
-    // Firebase
-    implementation(platform("com.google.firebase:firebase-bom:34.17.0"))
-    implementation("com.google.firebase:firebase-firestore-ktx")
-    implementation("com.google.firebase:firebase-auth-ktx")
+    // Firebase — dalla BOM 34 gli artefatti "-ktx" non esistono più:
+    // le estensioni Kotlin sono dentro ai moduli principali.
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.firestore)
+    implementation(libs.firebase.auth)
 
     // Room DB
     implementation("androidx.room:room-runtime:2.6.1")

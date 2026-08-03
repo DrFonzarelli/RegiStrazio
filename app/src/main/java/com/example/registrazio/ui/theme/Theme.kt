@@ -1,58 +1,61 @@
 package com.example.registrazio.ui.theme
 
-import android.app.Activity
-import android.os.Build
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.dynamicDarkColorScheme
-import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.runtime.CompositionLocalProvider
 
-private val DarkColorScheme = darkColorScheme(
-    primary = Purple80,
-    secondary = PurpleGrey80,
-    tertiary = Pink80
-)
-
-private val LightColorScheme = lightColorScheme(
-    primary = Purple40,
-    secondary = PurpleGrey40,
-    tertiary = Pink40
-
-    /* Other default colors to override
-    background = Color(0xFFFFFBFE),
-    surface = Color(0xFFFFFBFE),
-    onPrimary = Color.White,
-    onSecondary = Color.White,
-    onTertiary = Color.White,
-    onBackground = Color(0xFF1C1B1F),
-    onSurface = Color(0xFF1C1B1F),
-    */
-)
-
+/**
+ * Il prototipo NON segue il tema di sistema: ha un tasto luna/sole nella topbar
+ * che commuta `html[data-theme]`. Qui replichiamo lo stesso comportamento —
+ * `darkTheme` arriva dallo stato dell'app, non da `isSystemInDarkTheme()`.
+ *
+ * Nessun dynamic color: la palette del prototipo è fissa e riconoscibile,
+ * lasciarla ridipingere dal wallpaper la snaturerebbe.
+ */
 @Composable
 fun RegiStrazioTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
-    // Dynamic color is available on Android 12+
-    dynamicColor: Boolean = true,
+    darkTheme: Boolean = false,
     content: @Composable () -> Unit
 ) {
-    val colorScheme = when {
-        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-            val context = LocalContext.current
-            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-        }
+    val appColors = if (darkTheme) DarkAppColors else LightAppColors
 
-        darkTheme -> DarkColorScheme
-        else -> LightColorScheme
+    // Schema M3 minimo: serve solo ai pochi componenti Material che usiamo
+    // (ripple, selezione testo, cursore). Il resto passa da LocalAppColors.
+    val m3 = if (darkTheme) {
+        darkColorScheme(
+            primary = appColors.accent,
+            onPrimary = androidx.compose.ui.graphics.Color.White,
+            background = appColors.bg,
+            onBackground = appColors.text,
+            surface = appColors.surface,
+            onSurface = appColors.text,
+            error = appColors.danger
+        )
+    } else {
+        lightColorScheme(
+            primary = appColors.accent,
+            onPrimary = androidx.compose.ui.graphics.Color.White,
+            background = appColors.bg,
+            onBackground = appColors.text,
+            surface = appColors.surface,
+            onSurface = appColors.text,
+            error = appColors.danger
+        )
     }
 
-    MaterialTheme(
-        colorScheme = colorScheme,
-        typography = Typography,
-        content = content
-    )
+    CompositionLocalProvider(LocalAppColors provides appColors) {
+        MaterialTheme(
+            colorScheme = m3,
+            typography = Typography,
+            content = content
+        )
+    }
+}
+
+/** Scorciatoia: `AppTheme.colors.accent` invece di `LocalAppColors.current.accent`. */
+object AppTheme {
+    val colors: AppColors
+        @Composable get() = LocalAppColors.current
 }
