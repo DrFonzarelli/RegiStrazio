@@ -50,7 +50,6 @@ import com.example.registrazio.ui.components.pressScale
 import com.example.registrazio.ui.theme.AppIcon
 import com.example.registrazio.ui.theme.AppIcons
 import com.example.registrazio.ui.theme.AppTheme
-import com.example.registrazio.ui.theme.MainPadding
 import com.example.registrazio.ui.theme.Radius
 
 /**
