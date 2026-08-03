@@ -652,6 +652,30 @@ perché la BOM non le mostra): Firestore `26.5.0`, Auth `24.2.0`.
 **Attenzione:** tutto ciò che è 🟡 o ❌ vive **solo in memoria**. Chiudendo l'app
 si perde tutto tranne l'identità e ciò che sta in `ProfiliStore`.
 
+Detto in modo diretto, perché è la domanda che viene naturale fare:
+**il link MEGA non collega niente** (il link viene solo validato nella forma, poi
+le tracce sono inventate da `generateFakeTracks()`), **i commenti non vanno su
+Firestore** (restano in RAM, anche se il toast dice "Commento salvato"), e
+**il tasto play non produce audio** (avanza un contatore ogni 250 ms).
+
+#### Bug aperto: le tracce delle cartelle collegate non vengono ricaricate
+
+Nell'`init` di `AppViewModel` le cartelle vengono ripristinate da `ProfiliStore`,
+le tracce no:
+
+```kotlin
+cartelle = DemoData.cartelle + profiliStore.cartelle(),
+tracce   = DemoData.tracce   // <- le tracce finte generate al collegamento sono perse
+```
+
+*Effetto visibile:* colleghi una cartella, compaiono 4 tracce, chiudi e riapri
+l'app — la cartella è ancora in elenco ma segna "0 tracce" ed è vuota dentro.
+
+*Nota:* si risolve da sé quando le tracce arriveranno da Firestore/MEGA invece
+che da `generateFakeTracks()`. Non vale la pena persisterle finte: sarebbe lavoro
+buttato. Va però tenuto presente che finché quel pezzo non c'è, **questa
+incoerenza è attesa** — non è un errore nuovo da investigare.
+
 **Stato della build:** l'ultima build ha superato `kspDebugKotlin`,
 `processDebugGoogleServices` e tutto il packaging delle risorse, e si è fermata
 in `compileDebugKotlin` su due errori in `GateScreen.kt`. Quegli errori sono
