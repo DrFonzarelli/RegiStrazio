@@ -566,7 +566,7 @@ Le dipendenze sono dichiarate in `app/build.gradle.kts`.
 
 ## Cosa manca ancora prima di iniziare a buildare
 
-- [ ] `google-services.json` in `/app/` (dopo che Firebase è configurato)
+- [x] `google-services.json` in `/app/` (presente in locale, escluso da .gitignore)
 - [x] Plugin `google-services` e `ksp` aggiunti in entrambi i `build.gradle.kts`
 - [x] Dipendenze Firebase, Room, OkHttp, Gson, security-crypto aggiunte
 - [x] Permessi INTERNET e FOREGROUND_SERVICE nel Manifest
