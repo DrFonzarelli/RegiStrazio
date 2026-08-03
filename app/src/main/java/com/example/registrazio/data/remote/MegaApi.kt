@@ -83,6 +83,8 @@ class MegaException(val codice: Int?, message: String) : Exception(message)
  */
 data class EsitoElenco(
     val audio: List<FileMega>,
+    /** Nome della cartella su MEGA, `null` se non siamo riusciti a leggerlo. */
+    val nomeCartella: String?,
     /** Nodi di tipo file presenti nella cartella, prima di qualunque filtro. */
     val fileTotali: Int,
     /** File di cui non siamo riusciti a decifrare nome o chiave. */
@@ -123,11 +125,18 @@ class MegaApi(
         val estensioniScartate = mutableSetOf<String>()
         var fileTotali = 0
         var nonDecifrati = 0
+        var nomeCartella: String? = null
 
         for (elemento in nodi) {
             val nodo = elemento as? JsonObject ?: continue
             // t = 0 è un file; 1 è una cartella, 2 è la radice della condivisione
-            if (nodo.get("t")?.asInt != 0) continue
+            val tipo = nodo.get("t")?.asInt
+
+            if (tipo == 2) {
+                nomeCartella = nomeDelNodoRadice(nodo, link.chiave)
+                continue
+            }
+            if (tipo != 0) continue
             fileTotali++
 
             val handle = nodo.get("h")?.asString
@@ -161,7 +170,33 @@ class MegaApi(
             )
         }
 
-        return EsitoElenco(audio, fileTotali, nonDecifrati, estensioniScartate)
+        return EsitoElenco(
+            audio = audio,
+            nomeCartella = nomeCartella,
+            fileTotali = fileTotali,
+            nonDecifrati = nonDecifrati,
+            estensioniScartate = estensioniScartate
+        )
+    }
+
+    /**
+     * Nome della cartella condivisa, letto dal nodo radice.
+     *
+     * La radice è cifrata con la chiave del link, ma non sempre allo stesso modo:
+     * in certe risposte porta un campo `k` come gli altri nodi, in altre gli
+     * attributi sono cifrati direttamente con la chiave del link. Proviamo
+     * entrambe le strade invece di scommettere su una.
+     */
+    private fun nomeDelNodoRadice(nodo: JsonObject, chiaveLink: ByteArray): String? {
+        val attributi = nodo.get("a")?.asString ?: return null
+
+        nodo.get("k")?.asString
+            ?.let { MegaCrypto.decifraChiaveNodo(it, chiaveLink) }
+            ?.let { MegaCrypto.chiaveAttributi(it) }
+            ?.let { MegaCrypto.nomeDaAttributi(attributi, it) }
+            ?.let { return it }
+
+        return MegaCrypto.nomeDaAttributi(attributi, chiaveLink)
     }
 
     /**

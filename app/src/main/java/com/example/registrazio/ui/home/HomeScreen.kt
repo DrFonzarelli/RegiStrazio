@@ -77,7 +77,9 @@ fun HomeScreen(
     // La cartella nuova è l'ultima arrivata in elenco. Prima l'esito tornava
     // come valore dalla funzione; ora che c'è la rete di mezzo arriva di qui.
     LaunchedEffect(collegamento.completati) {
-        if (collegamento.completati > 0) daRinominare = cartelle.lastOrNull()?.id
+        if (collegamento.completati > 0 && collegamento.chiediNome) {
+            daRinominare = cartelle.lastOrNull()?.id
+        }
     }
 
     LazyColumn(modifier.fillMaxWidth(), contentPadding = contentPadding) {

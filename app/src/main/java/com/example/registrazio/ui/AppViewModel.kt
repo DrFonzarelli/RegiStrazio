@@ -14,6 +14,7 @@ import com.example.registrazio.data.model.Commento
 import com.example.registrazio.data.model.Traccia
 import com.example.registrazio.data.model.Utente
 import com.example.registrazio.domain.identity.IdentityManager
+import com.example.registrazio.util.OrdineNaturale
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -76,7 +77,13 @@ data class StatoCollegamento(
     val inCorso: Boolean = false,
     val errore: String? = null,
     /** Cresce a ogni collegamento riuscito: la ghost card lo osserva per richiudersi. */
-    val completati: Int = 0
+    val completati: Int = 0,
+    /**
+     * L'ultimo collegamento non ha saputo leggere il nome della cartella da MEGA
+     * e ha ripiegato su "Cartella A6kViD": vale la pena chiederlo subito.
+     * Quando il nome vero c'è, aprire la rinomina sarebbe solo un intralcio.
+     */
+    val chiediNome: Boolean = false
 )
 
 class AppViewModel(app: Application) : AndroidViewModel(app) {
@@ -378,7 +385,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
                 val cartella = Cartella(
                     id = linkMega.folderId,
-                    nome = Cartella.suggestName(linkMega.folderId),
+                    // Il nome vero della cartella su MEGA, se siamo riusciti a
+                    // decifrarlo. "Cartella A6kViD" resta solo come ripiego.
+                    nome = risultato.nomeCartella?.takeIf { it.isNotBlank() }
+                        ?: Cartella.suggestName(linkMega.folderId),
                     linkMega = link.trim(),
                     megaFolderId = linkMega.folderId,
                     aggiuntoDa = _state.value.identita?.appUid.orEmpty(),
@@ -386,7 +396,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 )
                 profiliStore.registraCartella(cartella)
 
-                val nuoveTracce = file.map { f ->
+                // MEGA restituisce i nodi senza un ordine utile: senza questo le
+                // tracce comparirebbero sparse.
+                val nuoveTracce = file.sortedWith(compareBy(OrdineNaturale) { it.nome }).map { f ->
                     Traccia(
                         id = f.handle,
                         cartellaId = cartella.id,
@@ -406,7 +418,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                         collegamento = it.collegamento.copy(
                             inCorso = false,
                             errore = null,
-                            completati = it.collegamento.completati + 1
+                            completati = it.collegamento.completati + 1,
+                            chiediNome = risultato.nomeCartella.isNullOrBlank()
                         )
                     )
                 }

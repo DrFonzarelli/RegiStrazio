@@ -723,14 +723,14 @@ perché la BOM non le mostra): Firestore `26.5.0`, Auth `24.2.0`.
 | Foglio account + strumenti di test | ✅ | |
 | Identità persistente (`appUid`) | ✅ | `EncryptedSharedPreferences` con fallback |
 | Riproduzione audio | 🟡 | timer finto a 250 ms in `AppViewModel`, ExoPlayer mai istanziato |
-| Collegamento di una cartella MEGA | ✅ | link letto davvero, nomi dei file decifrati |
+| Collegamento di una cartella MEGA | ✅ | **provato su una cartella vera**: nome cartella e nomi file decifrati |
 | Durata delle tracce da MEGA | ❌ | resta 0 (mostrata `--:--`) finché non apriremo il file con il player |
 | Waveform | 🟡 | equalizzatore animato decorativo, nessun dato reale |
 | Persistenza profili e cartelle | 🟡 | `ProfiliStore` = SharedPreferences + Gson, sta al posto di Firestore |
 | Firestore | ❌ | dipendenza presente, **mai importata** nel codice |
 | Firebase Anonymous Auth | ❌ | mai inizializzata |
 | Room (entity, DAO, database) | ❌ | dipendenza + KSP configurati, **zero classi scritte** |
-| MEGA HTTP API + crypto | 🟡 | elenco file e decifratura nomi fatti; manca lo scarico dei byte |
+| MEGA HTTP API + crypto | 🟡 | elenco e decifratura **verificati sul campo**; manca lo scarico dei byte |
 | Tasto Sincronizza | ❌ | |
 | Banner offline | ❌ | |
 | Download reale su disco | ❌ | il flag `scaricata` si limita a cambiare stato in memoria |
