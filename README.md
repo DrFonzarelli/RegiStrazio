@@ -508,15 +508,20 @@ Il progetto usa il version catalog (`gradle/libs.versions.toml`) per i plugin.
 Le dipendenze sono dichiarate in `app/build.gradle.kts`.
 
 **Plugin** (gia configurati in entrambi i `build.gradle.kts` tramite alias):
-- `com.google.gms.google-services` (v4.4.2)
-- `com.google.devtools.ksp` (v2.0.21-1.0.28)
+- `com.google.gms.google-services`
+- `com.google.devtools.ksp`
 
 **Librerie** (gia presenti nel blocco `dependencies`):
 - Compose (via BOM), Material3, Navigation, Media3/ExoPlayer, Coroutines, Lifecycle
-- Firebase BOM 33.3.0 + Firestore KTX + Auth KTX
+- Firebase BOM + Firestore + Auth
 - Room runtime + KTX + compiler (via KSP)
-- OkHttp 4.12.0 + Gson 2.11.0 (per MEGA HTTP API)
-- security-crypto 1.1.0-alpha06 (per EncryptedSharedPreferences)
+- OkHttp + Gson (per MEGA HTTP API)
+- security-crypto (per EncryptedSharedPreferences)
+
+> I numeri di versione **non** sono elencati qui: si disallineano appena si
+> aggiorna qualcosa. La tabella autorevole è in
+> [Memoria delle versioni](#memoria-delle-versioni), tenuta in pari con
+> `gradle/libs.versions.toml` e `app/build.gradle.kts`.
 
 > **Nota media3:** il progetto ha `media3-exoplayer:1.2.0` e `media3-session:1.2.0`.
 > Aggiungere `media3-ui:1.2.0` solo se si usa `PlayerView` XML;
@@ -570,6 +575,221 @@ Le dipendenze sono dichiarate in `app/build.gradle.kts`.
 - [x] Plugin `google-services` e `ksp` aggiunti in entrambi i `build.gradle.kts`
 - [x] Dipendenze Firebase, Room, OkHttp, Gson, security-crypto aggiunte
 - [x] Permessi INTERNET e FOREGROUND_SERVICE nel Manifest
+
+---
+
+## Diario di implementazione
+
+Da qui in giù non c'è progetto, c'è **memoria di lavoro**: cosa gira davvero,
+cosa è ancora finto, quali errori abbiamo già preso e perché. Serve a non
+ridiscutere due volte le stesse cose e a non ripetere gli stessi sbagli.
+
+Le sezioni sopra descrivono il progetto **come dovrà essere**. Queste
+descrivono il progetto **com'è adesso**. Quando le due cose divergono, ha
+ragione questa parte.
+
+---
+
+### Memoria delle versioni
+
+Aggiornata al commit `dd819f5`. Fonte di verità: `gradle/libs.versions.toml`
+e `app/build.gradle.kts` — se modifichi lì, aggiorna anche qui.
+
+| Cosa | Versione | Dove |
+|---|---|---|
+| Android Gradle Plugin | 9.0.1 | catalog `agp` |
+| Kotlin | 2.0.21 | catalog `kotlin` |
+| KSP | 2.0.21-1.0.28 | catalog `ksp` |
+| google-services | 4.5.0 | catalog `googleServices` |
+| Compose BOM | 2024.09.00 | catalog `composeBom` |
+| Firebase BOM | 34.17.0 | catalog `firebaseBom` |
+| core-ktx | 1.18.0 | catalog `coreKtx` |
+| lifecycle (runtime + viewmodel-compose) | 2.10.0 | catalog `lifecycleRuntimeKtx` |
+| activity-compose | 1.13.0 | catalog `activityCompose` |
+| Room | 2.6.1 | hardcoded in `app/build.gradle.kts` |
+| Media3 / ExoPlayer | 1.2.0 | hardcoded |
+| navigation-compose | 2.7.7 | hardcoded |
+| kotlinx-coroutines-android | 1.7.1 | hardcoded |
+| OkHttp | 4.12.0 | hardcoded |
+| Gson | 2.11.0 | hardcoded |
+| security-crypto | 1.1.0-alpha06 | hardcoded |
+
+**SDK e toolchain:** `compileSdk` 36 (minor 1) · `minSdk` 26 · `targetSdk` 36 ·
+Java/JVM target 17.
+
+**Versioni risolte a runtime dalle BOM** (utili quando si cerca documentazione,
+perché la BOM non le mostra): Firestore `26.5.0`, Auth `24.2.0`.
+
+---
+
+### Stato reale del lavoro
+
+**Legenda:** ✅ fatto e funzionante · 🟡 c'è ma è una finzione da sostituire ·
+❌ non esiste ancora
+
+| Area | Stato | Nota |
+|---|---|---|
+| Design system (colori, tema chiaro/scuro, icone, raggi) | ✅ | `ui/theme/` |
+| Modelli dati (`Utente`, `Cartella`, `Traccia`, `Commento`) | ✅ | `data/model/` |
+| Gate / onboarding | ✅ | crea account + recupera profilo |
+| Home + cartelle + ghost card | ✅ | |
+| Folder screen, TrackCard, timeline, commenti, voti | ✅ | tutta l'UI del prototipo |
+| Mini player | ✅ | logica di scollegamento inclusa |
+| Foglio account + strumenti di test | ✅ | |
+| Identità persistente (`appUid`) | ✅ | `EncryptedSharedPreferences` con fallback |
+| Riproduzione audio | 🟡 | timer finto a 250 ms in `AppViewModel`, ExoPlayer mai istanziato |
+| Elenco tracce di una cartella collegata | 🟡 | `generateFakeTracks()`, MEGA mai contattato |
+| Waveform | 🟡 | equalizzatore animato decorativo, nessun dato reale |
+| Persistenza profili e cartelle | 🟡 | `ProfiliStore` = SharedPreferences + Gson, sta al posto di Firestore |
+| Firestore | ❌ | dipendenza presente, **mai importata** nel codice |
+| Firebase Anonymous Auth | ❌ | mai inizializzata |
+| Room (entity, DAO, database) | ❌ | dipendenza + KSP configurati, **zero classi scritte** |
+| MEGA HTTP API + crypto | ❌ | OkHttp presente ma mai usato |
+| Tasto Sincronizza | ❌ | |
+| Banner offline | ❌ | |
+| Download reale su disco | ❌ | il flag `scaricata` si limita a cambiare stato in memoria |
+
+**Attenzione:** tutto ciò che è 🟡 o ❌ vive **solo in memoria**. Chiudendo l'app
+si perde tutto tranne l'identità e ciò che sta in `ProfiliStore`.
+
+**Stato della build:** l'ultima build ha superato `kspDebugKotlin`,
+`processDebugGoogleServices` e tutto il packaging delle risorse, e si è fermata
+in `compileDebugKotlin` su due errori in `GateScreen.kt`. Quegli errori sono
+corretti in `dd819f5`, **ma una build completamente verde non è ancora stata
+osservata**. Finché non lo è, non dare per scontato che compili.
+
+---
+
+### Errori già incontrati — non ripeterli
+
+#### 1. Gli artefatti Firebase `-ktx` non esistono più dalla BOM 34
+
+*Sintomo:* `Could not find com.google.firebase:firebase-firestore-ktx:` — con i
+due punti finali e **nessuna versione dopo**.
+
+*Causa:* dalla BOM 34 i moduli `-ktx` sono stati rimossi e le estensioni Kotlin
+sono state assorbite nei moduli principali. La BOM non conosce più quei nomi,
+quindi non assegna nessuna versione.
+
+*Fix:* usare `firebase-firestore` e `firebase-auth` senza suffisso.
+
+*Da ricordare:* la versione vuota dopo i due punti è la firma di questo tipo di
+problema. Vuol dire "la BOM non gestisce questo artefatto", non "la rete non
+funziona" — e vale per qualsiasi BOM, non solo Firebase.
+
+#### 2. Lambda finale che finisce nel parametro sbagliato
+
+*Sintomo:* due errori appaiati sulla stessa riga —
+`No value passed for parameter 'onClick'` **e**
+`actual type is 'Function0<Unit>', but 'Modifier' was expected`.
+
+*Causa:* in Kotlin `Foo("x") { ... }` mette la lambda nell'**ultimo** parametro.
+I bottoni di questo progetto hanno la firma `(testo, onClick, modifier)`, quindi
+la graffa finiva in `modifier`.
+
+*Fix:* passare `onClick` per nome: `GateActionButton("x", onClick = { ... })`.
+
+*Da ricordare:* la coppia di errori "parametro mancante + Function0 dove serve
+Modifier" è sempre questo. In `Common.kt` `onClick` viene **prima** di
+`modifier`: o si passa tutto posizionalmente, o si nomina `onClick`.
+
+#### 3. Moduli `lifecycle` disallineati
+
+*Causa:* `lifecycle-viewmodel-compose` era fissato a 2.7.0 mentre
+`lifecycle-runtime-ktx` stava a 2.10.0. Sono moduli diversi, quindi Gradle non
+li unifica, e ci si ritrova due `lifecycle-viewmodel` diversi nel classpath.
+
+*Fix:* entrambi dal catalog con lo stesso `version.ref`.
+
+*Da ricordare:* le famiglie di librerie che si versionano in blocco (lifecycle,
+Room, Media3, Compose) vanno tenute su **un solo** riferimento di versione.
+
+#### 4. Dipendenze Compose duplicate
+
+*Causa:* le stesse librerie dichiarate sia con versione esplicita sia tramite
+BOM. *Fix:* mai scrivere una versione per ciò che la BOM già gestisce.
+
+#### 5. Funzioni private che oscuravano quelle di Compose
+
+*Causa:* helper privati chiamati `remember()` e `borderStroke()` che entravano
+in conflitto con le funzioni standard di Compose, con errori di risoluzione
+molto poco leggibili.
+
+*Da ricordare:* non riusare nomi del vocabolario Compose (`remember`, `border`,
+`clickable`, `background`…) per helper propri.
+
+#### 6. `.idea/` finita nel repository
+
+*Causa:* i file erano già tracciati **prima** che `.gitignore` li escludesse, e
+`.gitignore` non ha effetto su ciò che git già segue.
+
+*Fix:* `git rm --cached -r .idea/`, poi commit.
+
+*Da ricordare:* `.gitignore` non è retroattivo. Se un file ignorato compare
+ancora nei cambiamenti, va tolto dall'indice a mano.
+
+#### 7. Warning KSP sui source set Kotlin
+
+*Fix applicato:* `android.disallowKotlinSourceSets=false` in `gradle.properties`.
+
+*Da ricordare:* è una **toppa temporanea**. La build lo dichiara esplicitamente
+sperimentale e avvisa che il default è ormai `true`. Andrà rimossa quando KSP e
+AGP si allineeranno; se un giorno l'opzione sparisce, il warning va risolto
+davvero, non silenziato.
+
+---
+
+### Trappole del progetto da tenere a mente
+
+**`google-services.json` non è nel repository, ed è voluto.** Sta solo in
+locale. Conseguenza pratica: **chi clona il repo da zero non riesce a
+buildare** finché non se lo procura dalla console Firebase. Non è un bug, ma va
+detto a chiunque si aggiunga al progetto.
+
+**I colori non passano da Material3.** Il tema usa `AppColors` con
+`CompositionLocalProvider` e si legge con `AppTheme.colors`. Usare
+`MaterialTheme.colorScheme` porta a colori che non c'entrano nulla con il
+prototipo. Lo schema M3 è tenuto al minimo apposta.
+
+**Le icone sono path SVG del prototipo** interpretati da `PathParser` in
+`Icons.kt`, non risorse vettoriali Android. Per aggiungerne una si copia la path
+dall'HTML, non si importa un file.
+
+**Cose che il prototipo fa e che Compose non ha già pronte** — sono già
+risolte, non riprogettarle:
+- bordo tratteggiato → `drawBehind` + `PathEffect.dashPathEffect`
+  (`HomeScreen.kt`), perché non esiste un `border-style: dashed`
+- mezza stella → `clipToBounds` su un contenitore da 6dp sopra la stella piena
+- comparsa/scomparsa del mini player → logica `barraCollegata` in `AppRoot.kt`,
+  che replica lo "scollegamento" del prototipo
+
+**La sort bar occupa l'indice 0 della lista.** Ogni volta che si converte la
+posizione di una traccia in indice della `LazyColumn` serve `+1`. Sbagliarlo non
+dà errore di compilazione: fa scrollare sulla traccia sbagliata.
+
+---
+
+### Debito noto
+
+Cose consapevolmente lasciate indietro, da affrontare quando conviene:
+
+- **Compose BOM da alzare.** La BOM 2024.09.00 fissa `compose-runtime` alla
+  linea 1.7, ma la build risolve **1.9.0**, tirato su da lifecycle 2.10.0. Non
+  è rotto, però la BOM di fatto non comanda più sul runtime: tanto vale portarla
+  a una versione coerente con lifecycle.
+- **`navigation-compose` è dichiarata e mai usata.** La navigazione è fatta a
+  mano con la sealed interface `Schermata`. O si toglie la dipendenza, o si
+  decide di adottarla davvero.
+- **Room e OkHttp sono dichiarate e mai usate.** Legittimo finché arrivano le
+  fasi che le richiedono; `kspDebugKotlin` intanto gira a vuoto perché non c'è
+  nessuna annotazione da processare.
+- **Versioni sparse.** Room, Media3, OkHttp, Gson, coroutines e security-crypto
+  sono ancora scritte a mano in `app/build.gradle.kts` invece che nel catalog.
+- **`applicationId` è ancora `com.example.registrazio`**, il default di Android
+  Studio. Va cambiato **prima** di qualunque pubblicazione, e cambiarlo dopo
+  aver configurato Firebase richiede di rigenerare `google-services.json`.
+- **`security-crypto` è una alpha.** `1.1.0-alpha06` regge l'identità utente,
+  che è la cosa più delicata dell'app. Da tenere d'occhio.
 
 ---
 
