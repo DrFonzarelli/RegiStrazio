@@ -725,6 +725,7 @@ perché la BOM non le mostra): Firestore `26.5.0`, Auth `24.2.0`.
 | Riproduzione audio | 🟡 | timer finto a 250 ms in `AppViewModel`, ExoPlayer mai istanziato |
 | Collegamento di una cartella MEGA | ✅ | **provato su una cartella vera**; ricollegare la stessa cartella la ricarica |
 | Durata delle tracce da MEGA | ❌ | resta 0 (mostrata `--:--`) finché non apriremo il file con il player |
+| Nome della cartella letto da MEGA | ❌ | **aperto**: due ipotesi su quale sia il nodo radice sono fallite, sotto diagnostica |
 | Waveform | 🟡 | equalizzatore animato decorativo, nessun dato reale |
 | Persistenza profili e cartelle | 🟡 | `ProfiliStore` = SharedPreferences + Gson, sta al posto di Firestore |
 | Firestore | ❌ | dipendenza presente, **mai importata** nel codice |
@@ -856,6 +857,14 @@ sistemata la radice, al riavvio sarebbe tornato il nome di ripiego.
 
 *Da ricordare:* quando un dato sbagliato **sopravvive a un fix**, i motivi sono
 due e vanno cercati entrambi — uno che lo produce e uno che lo conserva.
+
+*Non ancora chiuso:* sistemate entrambe le cause, il nome resta comunque quello
+di ripiego. Le due ipotesi su quale nodo sia la radice (`t = 2`, poi l'handle
+uguale all'id del link) erano tutt'e due sbagliate, e MEGA non è raggiungibile
+dall'ambiente in cui si scrive il codice: senza vedere la risposta vera si tira
+a indovinare. Ora il codice prova a decifrare gli attributi di **tutti** i nodi
+non-file e logga cosa trova sotto il tag `MegaApi`. La lezione vale in generale:
+dopo due ipotesi sbagliate di fila conviene smettere di indovinare e misurare.
 
 #### 8. Warning KSP sui source set Kotlin
 

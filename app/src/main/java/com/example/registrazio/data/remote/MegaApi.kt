@@ -1,5 +1,6 @@
 package com.example.registrazio.data.remote
 
+import android.util.Log
 import com.google.gson.JsonArray
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
@@ -118,29 +119,31 @@ class MegaApi(
      */
     suspend fun elencaFileAudio(link: LinkMega): EsitoElenco {
         val risposta = chiama(link.folderId, jsonComando("f", mapOf("c" to 1, "r" to 1)))
+        // I soli nomi dei campi, mai i valori: `a` e `k` sono il contenuto cifrato
+        // e la chiave, e questi log finiscono incollati nelle conversazioni.
+        Log.d(TAG, "Campi della risposta: ${risposta.asJsonObject.keySet()}")
+
         val nodi = risposta.asJsonObject.getAsJsonArray("f")
             ?: throw MegaException(null, "MEGA ha risposto senza l'elenco dei file.")
+        Log.d(TAG, "Nodi ricevuti: ${nodi.size()}")
 
         val audio = mutableListOf<FileMega>()
         val estensioniScartate = mutableSetOf<String>()
+        val candidatiRadice = mutableListOf<JsonObject>()
         var fileTotali = 0
         var nonDecifrati = 0
-        var nomeCartella: String? = null
 
         for (elemento in nodi) {
             val nodo = elemento as? JsonObject ?: continue
             val tipo = nodo.get("t")?.asInt
 
-            // La radice della cartella condivisa è il nodo il cui handle coincide
-            // con l'id del link. Non è `t = 2`: quello è la radice dell'account,
-            // che in una risposta su link pubblico non compare proprio.
-            if (nodo.get("h")?.asString == link.folderId || tipo == 2) {
-                nomeCartella = nomeDelNodoRadice(nodo, link.chiave) ?: nomeCartella
+            // Tutto ciò che non è un file è un possibile nodo radice. Quale sia
+            // davvero lo decidiamo dopo: due tentativi di indovinarlo dal solo
+            // `t` sono già falliti, meglio raccoglierli e provarli tutti.
+            if (tipo != 0) {
+                candidatiRadice += nodo
                 continue
             }
-
-            // t = 0 è un file, 1 una cartella: le sottocartelle non le seguiamo
-            if (tipo != 0) continue
             fileTotali++
 
             val handle = nodo.get("h")?.asString
@@ -176,7 +179,7 @@ class MegaApi(
 
         return EsitoElenco(
             audio = audio,
-            nomeCartella = nomeCartella,
+            nomeCartella = nomeDellaCartella(candidatiRadice, link),
             fileTotali = fileTotali,
             nonDecifrati = nonDecifrati,
             estensioniScartate = estensioniScartate
@@ -184,23 +187,57 @@ class MegaApi(
     }
 
     /**
-     * Nome della cartella condivisa, letto dal nodo radice.
+     * Nome della cartella condivisa.
      *
-     * La radice è cifrata con la chiave del link, ma non sempre allo stesso modo:
-     * in certe risposte porta un campo `k` come gli altri nodi, in altre gli
-     * attributi sono cifrati direttamente con la chiave del link. Proviamo
-     * entrambe le strade invece di scommettere su una.
+     * Non diamo per scontato quale nodo sia la radice: proviamo a decifrare gli
+     * attributi di tutti i nodi non-file e teniamo il primo che funziona, dando
+     * la precedenza a quello il cui handle coincide con l'id del link e poi a
+     * quello senza genitore.
+     *
+     * Anche il modo di cifrare varia: certi nodi portano un campo `k` come tutti
+     * gli altri, per altri gli attributi sono cifrati direttamente con la chiave
+     * del link. Vengono provate entrambe le strade.
      */
-    private fun nomeDelNodoRadice(nodo: JsonObject, chiaveLink: ByteArray): String? {
-        val attributi = nodo.get("a")?.asString ?: return null
+    private fun nomeDellaCartella(candidati: List<JsonObject>, link: LinkMega): String? {
+        val ordinati = candidati.sortedBy { nodo ->
+            when {
+                nodo.get("h")?.asString == link.folderId -> 0
+                nodo.get("p")?.asString.isNullOrEmpty() -> 1
+                else -> 2
+            }
+        }
 
-        nodo.get("k")?.asString
-            ?.let { MegaCrypto.decifraChiaveNodo(it, chiaveLink) }
-            ?.let { MegaCrypto.chiaveAttributi(it) }
-            ?.let { MegaCrypto.nomeDaAttributi(attributi, it) }
-            ?.let { return it }
+        Log.d(TAG, "Nodi candidati a radice: ${ordinati.size}")
+        for ((indice, nodo) in ordinati.withIndex()) {
+            val attributi = nodo.get("a")?.asString
+            val campoK = nodo.get("k")?.asString
+            Log.d(
+                TAG,
+                "  candidato $indice: t=${nodo.get("t")?.asString} " +
+                    "handleUgualeAlLink=${nodo.get("h")?.asString == link.folderId} " +
+                    "senzaGenitore=${nodo.get("p")?.asString.isNullOrEmpty()} " +
+                    "attributi=${attributi != null} chiave=${campoK != null}"
+            )
+            if (attributi == null) continue
 
-        return MegaCrypto.nomeDaAttributi(attributi, chiaveLink)
+            campoK?.let { MegaCrypto.decifraChiaveNodo(it, link.chiave) }
+                ?.let { MegaCrypto.chiaveAttributi(it) }
+                ?.let { MegaCrypto.nomeDaAttributi(attributi, it) }
+                ?.let {
+                    Log.d(TAG, "  -> nome letto dal candidato $indice tramite il suo campo k")
+                    return it
+                }
+
+            MegaCrypto.nomeDaAttributi(attributi, link.chiave)?.let {
+                Log.d(TAG, "  -> nome letto dal candidato $indice con la chiave del link")
+                return it
+            }
+
+            Log.d(TAG, "  -> candidato $indice: nessuna delle due chiavi decifra gli attributi")
+        }
+
+        Log.d(TAG, "Nome della cartella non ricavato: si usa il ripiego")
+        return null
     }
 
     /**
@@ -312,6 +349,7 @@ class MegaApi(
         nome.substringAfterLast('.', "").lowercase() in ESTENSIONI_AUDIO
 
     companion object {
+        private const val TAG = "MegaApi"
         private const val BASE = "https://g.api.mega.co.nz/cs"
         private const val EAGAIN = -3
         private const val MAX_TENTATIVI = 4
