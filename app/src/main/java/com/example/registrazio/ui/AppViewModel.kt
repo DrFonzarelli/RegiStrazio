@@ -1,6 +1,7 @@
 package com.example.registrazio.ui
 
 import android.app.Application
+import androidx.annotation.OptIn
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.registrazio.data.DemoData
@@ -13,9 +14,13 @@ import com.example.registrazio.data.model.Cartella
 import com.example.registrazio.data.model.Commento
 import com.example.registrazio.data.model.Traccia
 import com.example.registrazio.data.model.Utente
+import androidx.media3.common.util.UnstableApi
+import com.example.registrazio.data.remote.MegaCrypto
 import com.example.registrazio.domain.identity.IdentityManager
+import com.example.registrazio.domain.player.PlayerMega
 import com.example.registrazio.util.OrdineNaturale
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -86,16 +91,30 @@ data class StatoCollegamento(
     val chiediNome: Boolean = false
 )
 
+@OptIn(UnstableApi::class)
 class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     private val identityManager = IdentityManager(app)
     private val profiliStore = ProfiliStore(app)
     private val megaApi = MegaApi()
+    private val player = PlayerMega(app)
+
+    /**
+     * Chiavi di decrittazione dei file, per id traccia.
+     *
+     * Stanno solo in memoria e di proposito: sono il segreto che apre l'audio e
+     * si ricavano dal link della cartella, che è già salvato. Dopo un riavvio
+     * spariscono, come le tracce a cui appartengono.
+     */
+    private val chiaviFile = mutableMapOf<String, MegaCrypto.ChiaveFile>()
 
     private val _state = MutableStateFlow(AppState())
     val state: StateFlow<AppState> = _state.asStateFlow()
 
     private var playJob: Job? = null
+
+    /** Traccia attualmente caricata nel player: serve a distinguere una ripresa da un avvio. */
+    private var tracciaCaricata: String? = null
     private var bulkJob: Job? = null
     private var seqMessaggi = 0L
 
@@ -104,6 +123,25 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private var ascoltoGiaContato = false
 
     init {
+        // La durata vera si conosce solo quando il player apre il file: fino a
+        // quel momento la traccia vale 0 e l'interfaccia mostra "--:--".
+        player.onDurata = { secondi ->
+            _state.value.riproduzione.tracciaId?.let { id ->
+                aggiornaTraccia(id) { it.copy(durataSecondi = secondi) }
+            }
+        }
+        player.onFine = {
+            playJob?.cancel()
+            playJob = null
+            _state.update {
+                it.copy(riproduzione = it.riproduzione.copy(inRiproduzione = false, posizioneSecondi = 0f))
+            }
+        }
+        player.onErrore = { messaggio ->
+            fermaRiproduzione()
+            mostra(messaggio)
+        }
+
         val identita = identityManager.identita
         _state.update {
             it.copy(
@@ -174,8 +212,22 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun togglePlay(tracciaId: String) {
         val r = _state.value.riproduzione
-        if (r.tracciaId == tracciaId && r.inRiproduzione) mettiInPausa()
-        else avvia(tracciaId, if (r.tracciaId == tracciaId) r.posizioneSecondi else 0f)
+        when {
+            r.tracciaId == tracciaId && r.inRiproduzione -> mettiInPausa()
+
+            // Stessa traccia già caricata nel player: si riprende e basta.
+            // Ripassare da capo vorrebbe dire chiedere a MEGA un altro
+            // indirizzo e riscaricare il flusso, con l'attesa che ne segue.
+            r.tracciaId == tracciaId && tracciaCaricata == tracciaId -> riprendi(tracciaId)
+
+            else -> avvia(tracciaId, if (r.tracciaId == tracciaId) r.posizioneSecondi else 0f)
+        }
+    }
+
+    private fun riprendi(tracciaId: String) {
+        player.riprendi()
+        _state.update { it.copy(riproduzione = it.riproduzione.copy(inRiproduzione = true)) }
+        playJob = viewModelScope.launch { seguiPosizione(tracciaId) }
     }
 
     /** Salta a un punto e riparte: usato dai chip dei commenti e dal grafico dettagli. */
@@ -183,39 +235,121 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Trascinamento del playhead: sposta senza cambiare stato play/pausa. */
     fun spostaCursore(tracciaId: String, secondi: Float) {
-        val durata = traccia(tracciaId)?.durataSecondi?.toFloat() ?: return
+        val traccia = traccia(tracciaId) ?: return
+        val durata = traccia.durataSecondi.toFloat()
+        val nuova = if (durata > 0f) secondi.coerceIn(0f, durata) else secondi.coerceAtLeast(0f)
+
+        if (_state.value.riproduzione.tracciaId == tracciaId && traccia.daMega) {
+            player.cerca(nuova)
+        }
         _state.update {
             it.copy(
                 riproduzione = it.riproduzione.copy(
                     tracciaId = tracciaId,
-                    posizioneSecondi = secondi.coerceIn(0f, durata)
+                    posizioneSecondi = nuova
                 )
             )
         }
     }
 
     private fun avvia(tracciaId: String, da: Float) {
-        val durata = traccia(tracciaId)?.durataSecondi?.toFloat() ?: return
+        val traccia = traccia(tracciaId) ?: return
         playJob?.cancel()
         ascoltoAccumulato = 0f
         ascoltoGiaContato = false
+
         _state.update {
             it.copy(
                 riproduzione = StatoRiproduzione(
                     tracciaId = tracciaId,
                     inRiproduzione = true,
-                    posizioneSecondi = da.coerceIn(0f, durata)
+                    posizioneSecondi = da.coerceAtLeast(0f)
                 )
             )
         }
-        // Finto avanzamento a 250ms come nel prototipo: ExoPlayer prenderà
-        // il posto di questo loop senza che la UI debba cambiare.
+
+        // Da qui il player non contiene più la traccia buona: o ne carica
+        // un'altra, o va fermato perché si passa a una traccia simulata.
+        tracciaCaricata = null
+
+        if (traccia.daMega) avviaDaMega(traccia, da)
+        else avviaSimulata(tracciaId, traccia.durataSecondi.toFloat(), da)
+    }
+
+    /**
+     * Riproduzione vera: si chiede a MEGA un indirizzo fresco e lo si passa al
+     * player, che dietro le quinte decifra il flusso.
+     *
+     * L'indirizzo si chiede a ogni play e non si conserva: scade dopo poche ore,
+     * e riusarne uno vecchio darebbe un errore proprio mentre si preme play.
+     */
+    private fun avviaDaMega(traccia: Traccia, da: Float) {
+        playJob = viewModelScope.launch {
+            val chiave = chiaviFile[traccia.id]
+            val link = _state.value.cartelle
+                .find { it.id == traccia.cartellaId }
+                ?.linkMega
+                ?.let { LinkMega.parse(it) }
+
+            if (chiave == null || link == null) {
+                // Le chiavi vivono in memoria: dopo un riavvio non ci sono più,
+                // e senza chiave il file resta cifrato.
+                fermaRiproduzione()
+                mostra("Ricollega la cartella per riascoltare questa traccia")
+                return@launch
+            }
+
+            val url = try {
+                megaApi.urlDiDownload(link, traccia.idFileMega)
+            } catch (e: Exception) {
+                fermaRiproduzione()
+                mostra((e as? MegaException)?.message ?: "Non riesco a raggiungere MEGA.")
+                return@launch
+            }
+
+            player.riproduci(url, chiave, da)
+            tracciaCaricata = traccia.id
+            seguiPosizione(traccia.id)
+        }
+    }
+
+    /** Ricopia nello stato la posizione del player, finché il job non viene fermato. */
+    private suspend fun seguiPosizione(tracciaId: String) {
+        while (currentCoroutineContext().isActive) {
+            delay(TICK_MS)
+            val posizione = player.posizioneSecondi
+            registraAscolto(tracciaId, TICK_MS / 1000f, posizione)
+            _state.update { s ->
+                if (s.riproduzione.tracciaId != tracciaId) s
+                else s.copy(riproduzione = s.riproduzione.copy(posizioneSecondi = posizione))
+            }
+        }
+    }
+
+    /** Tracce demo: non hanno un file dietro, l'avanzamento resta simulato. */
+    private fun avviaSimulata(tracciaId: String, durata: Float, da: Float) {
+        // Se prima suonava una traccia vera, va zittita: qui il player non
+        // c'entra più e altrimenti continuerebbe per conto suo.
+        player.ferma()
+        if (durata <= 0f) return
+        _state.update {
+            it.copy(riproduzione = it.riproduzione.copy(posizioneSecondi = da.coerceIn(0f, durata)))
+        }
         playJob = viewModelScope.launch {
             while (isActive) {
                 delay(TICK_MS)
                 avanzaDiUnTick(tracciaId, durata)
             }
         }
+    }
+
+    /** Ferma tutto e riporta lo stato a "in pausa", senza toccare la posizione. */
+    private fun fermaRiproduzione() {
+        playJob?.cancel()
+        playJob = null
+        player.ferma()
+        tracciaCaricata = null
+        _state.update { it.copy(riproduzione = it.riproduzione.copy(inRiproduzione = false)) }
     }
 
     private fun avanzaDiUnTick(tracciaId: String, durata: Float) {
@@ -260,7 +394,35 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun mettiInPausa() {
         playJob?.cancel()
         playJob = null
+        player.pausa()
         _state.update { it.copy(riproduzione = it.riproduzione.copy(inRiproduzione = false)) }
+    }
+
+    /**
+     * Conteggio ascolti e punti più riascoltati, per la riproduzione vera.
+     * Il percorso simulato ha la sua versione dentro [avanzaDiUnTick].
+     */
+    private fun registraAscolto(tracciaId: String, passo: Float, posizione: Float) {
+        val durata = traccia(tracciaId)?.durataSecondi?.toFloat() ?: return
+        if (durata <= 0f) return
+
+        var ascoltoInPiu = 0
+        if (!ascoltoGiaContato) {
+            ascoltoAccumulato += passo
+            // Un ascolto conta dopo 30 secondi effettivi, non al primo tap.
+            if (ascoltoAccumulato >= SOGLIA_ASCOLTO) {
+                ascoltoGiaContato = true
+                ascoltoInPiu = 1
+            }
+        }
+
+        val indice = ((posizione / durata) * BUCKETS).toInt().coerceIn(0, BUCKETS - 1)
+        aggiornaTraccia(tracciaId) { t ->
+            t.copy(
+                ascolti = t.ascolti + ascoltoInPiu,
+                playBuckets = t.playBuckets.mapIndexed { i, v -> if (i == indice) v + passo else v }
+            )
+        }
     }
 
     // ---------- voti ----------
@@ -404,6 +566,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
                 // MEGA restituisce i nodi senza un ordine utile: senza questo le
                 // tracce comparirebbero sparse.
+                // Le chiavi arrivano solo con l'elenco: vanno tenute ora, o al
+                // play non si potrebbe decifrare niente.
+                file.forEach { chiaviFile[it.handle] = it.chiave }
+
                 val nuoveTracce = file.sortedWith(compareBy(OrdineNaturale) { it.nome }).map { f ->
                     Traccia(
                         id = f.handle,
@@ -569,6 +735,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     override fun onCleared() {
         playJob?.cancel()
         bulkJob?.cancel()
+        // Senza questa il player continuerebbe a tenersi socket e decoder.
+        player.rilascia()
         super.onCleared()
     }
 

@@ -67,6 +67,9 @@ dependencies {
 
     // Media3 / ExoPlayer
     implementation("androidx.media3:media3-exoplayer:1.2.0")
+    // Esplicita anche se arriva da exoplayer: il DataSource che decifra MEGA
+    // estende BaseDataSource, e dipenderne per via transitiva è fragile.
+    implementation("androidx.media3:media3-datasource:1.2.0")
     implementation("androidx.media3:media3-session:1.2.0")
 
     // Coroutines

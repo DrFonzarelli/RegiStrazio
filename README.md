@@ -722,9 +722,10 @@ perché la BOM non le mostra): Firestore `26.5.0`, Auth `24.2.0`.
 | Mini player | ✅ | logica di scollegamento inclusa |
 | Foglio account + strumenti di test | ✅ | |
 | Identità persistente (`appUid`) | ✅ | `EncryptedSharedPreferences` con fallback |
-| Riproduzione audio | 🟡 | timer finto a 250 ms in `AppViewModel`, ExoPlayer mai istanziato |
+| Riproduzione audio da MEGA | 🟡 | ExoPlayer + decifratura AES-CTR scritti, **mai provati su un telefono** |
+| Riproduzione tracce demo | 🟡 | restano sul timer finto: non hanno un file dietro |
 | Collegamento di una cartella MEGA | ✅ | **provato su una cartella vera**; ricollegare la stessa cartella la ricarica |
-| Durata delle tracce da MEGA | ❌ | resta 0 (mostrata `--:--`) finché non apriremo il file con il player |
+| Durata delle tracce da MEGA | 🟡 | la scrive il player appena apre il file; prima resta `--:--` |
 | Nome della cartella letto da MEGA | ✅ | risolto provando tutti i nodi non-file, vedi errore 7 |
 | Waveform | 🟡 | equalizzatore animato decorativo, nessun dato reale |
 | Persistenza profili e cartelle | 🟡 | `ProfiliStore` = SharedPreferences + Gson, sta al posto di Firestore |

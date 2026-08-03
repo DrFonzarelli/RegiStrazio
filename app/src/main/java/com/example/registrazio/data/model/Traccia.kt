@@ -53,6 +53,15 @@ data class Traccia(
         get() = votiPieni + votiMezzi * 0.5f
 
     /**
+     * C'è un file vero dietro questa traccia.
+     *
+     * Le tracce demo non ne hanno: si riconoscono da qui, e per loro
+     * l'avanzamento resta simulato invece di passare dal player.
+     */
+    val daMega: Boolean
+        get() = idFileMega.isNotBlank()
+
+    /**
      * Applica il ciclo della stella aggiornando anche i contatori di gruppo,
      * come fa `favBtn` nel prototipo.
      */
