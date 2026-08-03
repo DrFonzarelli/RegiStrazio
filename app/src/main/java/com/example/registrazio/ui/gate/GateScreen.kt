@@ -213,14 +213,14 @@ private fun CreaAccountForm(onCrea: (String, String) -> String?) {
 
     Spacer(Modifier.height(14.dp))
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-        GateActionButton("Crea account →") {
+        GateActionButton("Crea account →", onClick = {
             val colore = coloreScelto
             errore = when {
                 nome.isBlank() -> "Scrivi un nome."
                 colore == null -> "Scegli un colore."
                 else -> onCrea(nome, colore)
             }
-        }
+        })
     }
 }
 
