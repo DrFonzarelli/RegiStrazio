@@ -74,6 +74,24 @@ data class FileMega(
 class MegaException(val codice: Int?, message: String) : Exception(message)
 
 /**
+ * Esito della lettura di una cartella, con il conteggio di ciò che è stato
+ * scartato e perché.
+ *
+ * Senza questi numeri "non ho trovato niente" resta ambiguo: una cartella di
+ * sole foto e una cartella di cui non sappiamo decifrare i nomi darebbero lo
+ * stesso messaggio, e sono due problemi opposti.
+ */
+data class EsitoElenco(
+    val audio: List<FileMega>,
+    /** Nodi di tipo file presenti nella cartella, prima di qualunque filtro. */
+    val fileTotali: Int,
+    /** File di cui non siamo riusciti a decifrare nome o chiave. */
+    val nonDecifrati: Int,
+    /** Estensioni viste fra i file decifrati ma scartati perché non audio. */
+    val estensioniScartate: Set<String>
+)
+
+/**
  * Client per l'API pubblica di MEGA — solo le due operazioni che servono:
  * elencare i file di una cartella e farsi dare l'URL da cui scaricarne uno.
  *
@@ -96,35 +114,54 @@ class MegaApi(
      * cartella piatta e scendere ricorsivamente aprirebbe domande
      * (come si mostrano? si appiattiscono?) che per ora non servono.
      */
-    suspend fun elencaFileAudio(link: LinkMega): List<FileMega> {
+    suspend fun elencaFileAudio(link: LinkMega): EsitoElenco {
         val risposta = chiama(link.folderId, jsonComando("f", mapOf("c" to 1, "r" to 1)))
         val nodi = risposta.asJsonObject.getAsJsonArray("f")
             ?: throw MegaException(null, "MEGA ha risposto senza l'elenco dei file.")
 
-        return nodi.mapNotNull { elemento ->
-            val nodo = elemento as? JsonObject ?: return@mapNotNull null
-            // t = 0 è un file; 1 è una cartella, 2 è la radice della condivisione
-            if (nodo.get("t")?.asInt != 0) return@mapNotNull null
+        val audio = mutableListOf<FileMega>()
+        val estensioniScartate = mutableSetOf<String>()
+        var fileTotali = 0
+        var nonDecifrati = 0
 
-            val handle = nodo.get("h")?.asString ?: return@mapNotNull null
-            val campoK = nodo.get("k")?.asString ?: return@mapNotNull null
-            val attributi = nodo.get("a")?.asString ?: return@mapNotNull null
+        for (elemento in nodi) {
+            val nodo = elemento as? JsonObject ?: continue
+            // t = 0 è un file; 1 è una cartella, 2 è la radice della condivisione
+            if (nodo.get("t")?.asInt != 0) continue
+            fileTotali++
+
+            val handle = nodo.get("h")?.asString
+            val campoK = nodo.get("k")?.asString
+            val attributi = nodo.get("a")?.asString
+            if (handle == null || campoK == null || attributi == null) {
+                nonDecifrati++
+                continue
+            }
 
             val chiaveNodo = MegaCrypto.decifraChiaveNodo(campoK, link.chiave)
-                ?: return@mapNotNull null
-            val chiaveFile = MegaCrypto.chiaveFileDa(chiaveNodo) ?: return@mapNotNull null
-            val chiaveAttr = MegaCrypto.chiaveAttributi(chiaveNodo) ?: return@mapNotNull null
-            val nome = MegaCrypto.nomeDaAttributi(attributi, chiaveAttr) ?: return@mapNotNull null
+            val chiaveFile = chiaveNodo?.let { MegaCrypto.chiaveFileDa(it) }
+            val chiaveAttr = chiaveNodo?.let { MegaCrypto.chiaveAttributi(it) }
+            val nome = chiaveAttr?.let { MegaCrypto.nomeDaAttributi(attributi, it) }
+            if (chiaveFile == null || nome == null) {
+                nonDecifrati++
+                continue
+            }
 
-            if (!haEstensioneAudio(nome)) return@mapNotNull null
+            val estensione = nome.substringAfterLast('.', "").lowercase()
+            if (estensione !in ESTENSIONI_AUDIO) {
+                estensioniScartate += estensione.ifEmpty { "(senza estensione)" }
+                continue
+            }
 
-            FileMega(
+            audio += FileMega(
                 handle = handle,
                 nome = nome,
                 dimensioneByte = nodo.get("s")?.asLong ?: 0L,
                 chiave = chiaveFile
             )
         }
+
+        return EsitoElenco(audio, fileTotali, nonDecifrati, estensioniScartate)
     }
 
     /**

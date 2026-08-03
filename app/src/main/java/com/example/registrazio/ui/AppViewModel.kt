@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.registrazio.data.DemoData
 import com.example.registrazio.data.local.ProfiliStore
+import com.example.registrazio.data.remote.EsitoElenco
 import com.example.registrazio.data.remote.LinkMega
 import com.example.registrazio.data.remote.MegaApi
 import com.example.registrazio.data.remote.MegaException
@@ -366,13 +367,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val esito = runCatching { megaApi.elencaFileAudio(linkMega) }
 
-            esito.onSuccess { file ->
+            esito.onSuccess { risultato ->
+                val file = risultato.audio
                 if (file.isEmpty()) {
                     aggiornaCollegamento {
-                        it.copy(
-                            inCorso = false,
-                            errore = "La cartella è raggiungibile ma non contiene file audio."
-                        )
+                        it.copy(inCorso = false, errore = spiegaElencoVuoto(risultato))
                     }
                     return@launch
                 }
@@ -424,6 +423,30 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
         }
+    }
+
+    /**
+     * Perché la cartella non ha prodotto nessuna traccia.
+     *
+     * Le tre cause vogliono tre messaggi diversi: cartella vuota, nomi che non si
+     * decifrano (chiave sbagliata), file che non sono audio. Con un messaggio
+     * unico non si capirebbe da che parte guardare.
+     */
+    private fun spiegaElencoVuoto(esito: EsitoElenco): String = when {
+        esito.fileTotali == 0 ->
+            "La cartella è raggiungibile ma è vuota."
+
+        esito.nonDecifrati == esito.fileTotali ->
+            "Ho letto ${esito.fileTotali} file ma non riesco a decifrarne i nomi. " +
+                "Di solito vuol dire che il link è incompleto: la parte dopo il # è la chiave e serve tutta."
+
+        esito.audio.isEmpty() && esito.estensioniScartate.isNotEmpty() ->
+            "Ho letto ${esito.fileTotali} file, ma nessuno è audio " +
+                "(ho trovato: ${esito.estensioniScartate.sorted().joinToString(", ")})."
+
+        else ->
+            "Ho letto ${esito.fileTotali} file ma non ne è utilizzabile nessuno " +
+                "(${esito.nonDecifrati} non decifrati)."
     }
 
     fun pulisciErroreCollegamento() = aggiornaCollegamento { it.copy(errore = null) }
