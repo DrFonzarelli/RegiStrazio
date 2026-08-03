@@ -183,9 +183,11 @@ fun AppRoot(vm: AppViewModel = viewModel()) {
                             conteggioTracce = { id -> state.tracce.count { it.cartellaId == id } },
                             cartelleRinominabili = state.cartelle
                                 .map { it.id }.filterNot { it in ID_DEMO }.toSet(),
+                            collegamento = state.collegamento,
                             onApriCartella = vm::apriCartella,
                             onRinomina = vm::rinominaCartella,
                             onCollegaLink = vm::collegaCartella,
+                            onPulisciErrore = vm::pulisciErroreCollegamento,
                             modifier = colonna,
                             contentPadding = padding
                         )

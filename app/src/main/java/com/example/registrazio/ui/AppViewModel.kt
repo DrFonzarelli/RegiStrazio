@@ -5,6 +5,9 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.registrazio.data.DemoData
 import com.example.registrazio.data.local.ProfiliStore
+import com.example.registrazio.data.remote.LinkMega
+import com.example.registrazio.data.remote.MegaApi
+import com.example.registrazio.data.remote.MegaException
 import com.example.registrazio.data.model.Cartella
 import com.example.registrazio.data.model.Commento
 import com.example.registrazio.data.model.Traccia
@@ -58,13 +61,28 @@ data class AppState(
     val ordinamento: Ordinamento = Ordinamento.DEFAULT,
     val riproduzione: StatoRiproduzione = StatoRiproduzione(),
     val bulkDownload: StatoBulkDownload? = null,
-    val messaggio: Messaggio? = null
+    val messaggio: Messaggio? = null,
+    val collegamento: StatoCollegamento = StatoCollegamento()
+)
+
+/**
+ * Collegamento di una cartella MEGA in corso.
+ *
+ * Serve uno stato perché ora c'è di mezzo la rete: prima la funzione rispondeva
+ * subito con l'eventuale errore, adesso può metterci qualche secondo.
+ */
+data class StatoCollegamento(
+    val inCorso: Boolean = false,
+    val errore: String? = null,
+    /** Cresce a ogni collegamento riuscito: la ghost card lo osserva per richiudersi. */
+    val completati: Int = 0
 )
 
 class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     private val identityManager = IdentityManager(app)
     private val profiliStore = ProfiliStore(app)
+    private val megaApi = MegaApi()
 
     private val _state = MutableStateFlow(AppState())
     val state: StateFlow<AppState> = _state.asStateFlow()
@@ -322,28 +340,96 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---------- cartelle ----------
 
-    fun collegaCartella(link: String): String? {
-        val folderId = Cartella.parseFolderId(link)
-            ?: return "Non sembra un link di cartella Mega valido."
-        if (_state.value.cartelle.any { it.megaFolderId == folderId }) {
-            mostra("Questa cartella è già collegata.")
-            return null
+    /**
+     * Collega una cartella MEGA leggendone davvero il contenuto.
+     *
+     * L'esito non torna più come valore: passa da [AppState.collegamento],
+     * perché ora c'è una chiamata di rete in mezzo.
+     */
+    fun collegaCartella(link: String) {
+        if (_state.value.collegamento.inCorso) return
+
+        val linkMega = LinkMega.parse(link)
+        if (linkMega == null) {
+            aggiornaCollegamento {
+                it.copy(errore = "Non sembra un link di cartella MEGA valido. Serve un link del tipo mega.nz/folder/… con la chiave dopo il #.")
+            }
+            return
         }
-        val cartella = Cartella(
-            id = folderId,
-            nome = Cartella.suggestName(folderId),
-            linkMega = link,
-            megaFolderId = folderId,
-            aggiuntoDa = _state.value.identita?.appUid.orEmpty()
-        )
-        profiliStore.registraCartella(cartella)
-        // Placeholder finché la lista file non arriverà davvero dall'API MEGA.
-        val nuoveTracce = DemoData.generateFakeTracks(folderId, 4)
-        _state.update {
-            it.copy(cartelle = it.cartelle + cartella, tracce = it.tracce + nuoveTracce)
+        if (_state.value.cartelle.any { it.megaFolderId == linkMega.folderId }) {
+            aggiornaCollegamento { it.copy(errore = "Questa cartella è già collegata.") }
+            return
         }
-        return null
+
+        aggiornaCollegamento { it.copy(inCorso = true, errore = null) }
+
+        viewModelScope.launch {
+            val esito = runCatching { megaApi.elencaFileAudio(linkMega) }
+
+            esito.onSuccess { file ->
+                if (file.isEmpty()) {
+                    aggiornaCollegamento {
+                        it.copy(
+                            inCorso = false,
+                            errore = "La cartella è raggiungibile ma non contiene file audio."
+                        )
+                    }
+                    return@launch
+                }
+
+                val cartella = Cartella(
+                    id = linkMega.folderId,
+                    nome = Cartella.suggestName(linkMega.folderId),
+                    linkMega = link.trim(),
+                    megaFolderId = linkMega.folderId,
+                    aggiuntoDa = _state.value.identita?.appUid.orEmpty(),
+                    numTracce = file.size
+                )
+                profiliStore.registraCartella(cartella)
+
+                val nuoveTracce = file.map { f ->
+                    Traccia(
+                        id = f.handle,
+                        cartellaId = cartella.id,
+                        // Il nome su MEGA include l'estensione: nell'elenco è rumore.
+                        titolo = f.nome.substringBeforeLast('.', f.nome),
+                        idFileMega = f.handle,
+                        // 0 = ancora ignota. La durata sta dentro il file audio, che
+                        // a questo punto non abbiamo ancora aperto.
+                        durataSecondi = 0
+                    )
+                }
+
+                _state.update {
+                    it.copy(
+                        cartelle = it.cartelle + cartella,
+                        tracce = it.tracce + nuoveTracce,
+                        collegamento = it.collegamento.copy(
+                            inCorso = false,
+                            errore = null,
+                            completati = it.collegamento.completati + 1
+                        )
+                    )
+                }
+                mostra("Collegate ${file.size} tracce")
+            }
+
+            esito.onFailure { errore ->
+                aggiornaCollegamento {
+                    it.copy(
+                        inCorso = false,
+                        errore = (errore as? MegaException)?.message
+                            ?: "Non riesco a leggere la cartella. Controlla la connessione."
+                    )
+                }
+            }
+        }
     }
+
+    fun pulisciErroreCollegamento() = aggiornaCollegamento { it.copy(errore = null) }
+
+    private fun aggiornaCollegamento(blocco: (StatoCollegamento) -> StatoCollegamento) =
+        _state.update { it.copy(collegamento = blocco(it.collegamento)) }
 
     fun rimuoviCartella(cartellaId: String) {
         val nome = _state.value.cartelle.find { it.id == cartellaId }?.nome ?: return

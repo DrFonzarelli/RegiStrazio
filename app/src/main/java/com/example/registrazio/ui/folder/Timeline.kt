@@ -90,9 +90,13 @@ fun Timeline(
                 .background(colors.borderStrong)
         )
 
+        // La durata resta 0 finché non l'abbiamo letta dal file audio: senza
+        // questa rete la divisione darebbe NaN e il layout ne uscirebbe rotto.
+        val durataSicura = durataSecondi.coerceAtLeast(1)
+
         // marker dei commenti, centrati sul proprio minutaggio
         commenti.forEachIndexed { indice, commento ->
-            val frazione = (commento.timestampSecondi / durataSecondi).coerceIn(0f, 1f)
+            val frazione = (commento.timestampSecondi / durataSicura).coerceIn(0f, 1f)
             val selezionato = indice == indiceSelezionato
             Box(
                 Modifier
@@ -125,7 +129,7 @@ fun Timeline(
 
         // .playhead — un rientro dell'1.1% per non farlo mai toccare il bordo
         val inset = 0.011f
-        val frazionePos = (posizioneSecondi / durataSecondi).coerceIn(0f, 1f)
+        val frazionePos = (posizioneSecondi / durataSicura).coerceIn(0f, 1f)
         val frazioneVisiva = inset + frazionePos * (1f - inset * 2)
 
         Box(

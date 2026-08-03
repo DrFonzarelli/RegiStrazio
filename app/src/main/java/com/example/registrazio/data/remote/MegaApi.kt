@@ -1,0 +1,247 @@
+package com.example.registrazio.data.remote
+
+import com.google.gson.JsonArray
+import com.google.gson.JsonElement
+import com.google.gson.JsonObject
+import com.google.gson.JsonParser
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
+
+/**
+ * Link pubblico a una cartella MEGA, spezzato nelle sue due parti.
+ *
+ * La chiave sta dopo il `#`, che i browser non mandano mai al server: è il
+ * motivo per cui MEGA può non conoscere il contenuto di ciò che ospita. Come
+ * conseguenza pratica, **chi ha il link ha accesso**: va trattato come una
+ * password, non come un indirizzo.
+ */
+data class LinkMega(val folderId: String, val chiave: ByteArray) {
+    override fun equals(other: Any?): Boolean =
+        other is LinkMega && folderId == other.folderId && chiave.contentEquals(other.chiave)
+
+    override fun hashCode(): Int = 31 * folderId.hashCode() + chiave.contentHashCode()
+
+    companion object {
+        /**
+         * Riconosce i due formati in circolazione:
+         * - attuale: `https://mega.nz/folder/<id>#<chiave>`
+         * - vecchio: `https://mega.nz/#F!<id>!<chiave>`
+         *
+         * Restituisce `null` se manca l'id, se manca la chiave, o se la chiave
+         * non decodifica a 16 byte — meglio un errore subito che una cartella
+         * collegata che poi mostra nomi illeggibili.
+         */
+        fun parse(link: String): LinkMega? {
+            val pulito = link.trim()
+            val (id, chiaveB64) = when {
+                pulito.contains("/folder/") -> {
+                    val dopo = pulito.substringAfter("/folder/")
+                    dopo.substringBefore('#').substringBefore('/').trim() to
+                        dopo.substringAfter('#', "").substringBefore('/').trim()
+                }
+                pulito.contains("#F!") -> {
+                    val pezzi = pulito.substringAfter("#F!").split("!")
+                    (pezzi.getOrNull(0)?.trim() ?: "") to (pezzi.getOrNull(1)?.trim() ?: "")
+                }
+                else -> return null
+            }
+            if (id.isEmpty() || chiaveB64.isEmpty()) return null
+            val chiave = runCatching { MegaCrypto.base64Decode(chiaveB64) }.getOrNull() ?: return null
+            if (chiave.size != 16) return null
+            return LinkMega(id, chiave)
+        }
+    }
+}
+
+/** Un file audio trovato dentro una cartella MEGA, con il nome già in chiaro. */
+data class FileMega(
+    /** Node handle: serve per chiedere l'URL di download. */
+    val handle: String,
+    val nome: String,
+    val dimensioneByte: Long,
+    /** Chiave AES e nonce del file, per decifrarne il contenuto. */
+    val chiave: MegaCrypto.ChiaveFile
+)
+
+/** Errore restituito da MEGA, o problema nel parlarci. */
+class MegaException(val codice: Int?, message: String) : Exception(message)
+
+/**
+ * Client per l'API pubblica di MEGA — solo le due operazioni che servono:
+ * elencare i file di una cartella e farsi dare l'URL da cui scaricarne uno.
+ *
+ * Non usiamo il MegaSDK ufficiale: richiederebbe librerie native C++ via JNI
+ * per due sole chiamate HTTP.
+ */
+class MegaApi(
+    private val client: OkHttpClient = OkHttpClient.Builder()
+        .connectTimeout(20, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
+        .build()
+) {
+
+    private val sequenza = AtomicInteger(0)
+
+    /**
+     * Elenca i file audio della cartella, con i nomi già decifrati.
+     *
+     * Le sottocartelle vengono ignorate: il gruppo tiene le prove in una
+     * cartella piatta e scendere ricorsivamente aprirebbe domande
+     * (come si mostrano? si appiattiscono?) che per ora non servono.
+     */
+    suspend fun elencaFileAudio(link: LinkMega): List<FileMega> {
+        val risposta = chiama(link.folderId, jsonComando("f", mapOf("c" to 1, "r" to 1)))
+        val nodi = risposta.asJsonObject.getAsJsonArray("f")
+            ?: throw MegaException(null, "MEGA ha risposto senza l'elenco dei file.")
+
+        return nodi.mapNotNull { elemento ->
+            val nodo = elemento as? JsonObject ?: return@mapNotNull null
+            // t = 0 è un file; 1 è una cartella, 2 è la radice della condivisione
+            if (nodo.get("t")?.asInt != 0) return@mapNotNull null
+
+            val handle = nodo.get("h")?.asString ?: return@mapNotNull null
+            val campoK = nodo.get("k")?.asString ?: return@mapNotNull null
+            val attributi = nodo.get("a")?.asString ?: return@mapNotNull null
+
+            val chiaveNodo = MegaCrypto.decifraChiaveNodo(campoK, link.chiave)
+                ?: return@mapNotNull null
+            val chiaveFile = MegaCrypto.chiaveFileDa(chiaveNodo) ?: return@mapNotNull null
+            val chiaveAttr = MegaCrypto.chiaveAttributi(chiaveNodo) ?: return@mapNotNull null
+            val nome = MegaCrypto.nomeDaAttributi(attributi, chiaveAttr) ?: return@mapNotNull null
+
+            if (!haEstensioneAudio(nome)) return@mapNotNull null
+
+            FileMega(
+                handle = handle,
+                nome = nome,
+                dimensioneByte = nodo.get("s")?.asLong ?: 0L,
+                chiave = chiaveFile
+            )
+        }
+    }
+
+    /**
+     * URL temporaneo da cui leggere i byte del file.
+     *
+     * Attenzione: i byte che arrivano da qui sono **cifrati** (AES-CTR). Vanno
+     * decifrati con [FileMega.chiave] prima di poter essere riprodotti o salvati.
+     *
+     * L'URL scade dopo poche ore, quindi va richiesto al momento del bisogno e
+     * non conservato tra una sessione e l'altra.
+     */
+    suspend fun urlDiDownload(link: LinkMega, handle: String): String {
+        val risposta = chiama(
+            link.folderId,
+            jsonComando("g", mapOf("g" to 1, "n" to handle, "ssl" to 2))
+        )
+        return risposta.asJsonObject.get("g")?.asString
+            ?: throw MegaException(null, "MEGA non ha restituito l'indirizzo del file.")
+    }
+
+    // ---------- interno ----------
+
+    private fun jsonComando(azione: String, extra: Map<String, Any>): String {
+        val comando = JsonObject().apply {
+            addProperty("a", azione)
+            extra.forEach { (chiave, valore) ->
+                when (valore) {
+                    is Number -> addProperty(chiave, valore)
+                    else -> addProperty(chiave, valore.toString())
+                }
+            }
+        }
+        return JsonArray().apply { add(comando) }.toString()
+    }
+
+    /**
+     * Esegue un comando e restituisce il primo elemento della risposta.
+     *
+     * MEGA risponde sempre con un array, e segnala gli errori con un numero
+     * negativo al posto dell'oggetto. Il codice -3 significa "riprova tra poco"
+     * ed è l'unico su cui ha senso insistere.
+     */
+    private suspend fun chiama(folderId: String, corpo: String): JsonElement =
+        withContext(Dispatchers.IO) {
+            var attesa = 500L
+            repeat(MAX_TENTATIVI) { tentativo ->
+                val elemento = eseguiUnaVolta(folderId, corpo)
+                val codice = codiceErrore(elemento)
+                if (codice == null) return@withContext elemento
+                if (codice != EAGAIN || tentativo == MAX_TENTATIVI - 1) {
+                    throw MegaException(codice, messaggioPerCodice(codice))
+                }
+                delay(attesa)
+                attesa *= 2
+            }
+            throw MegaException(EAGAIN, messaggioPerCodice(EAGAIN))
+        }
+
+    private fun eseguiUnaVolta(folderId: String, corpo: String): JsonElement {
+        val url = "$BASE?id=${sequenza.getAndIncrement()}&n=$folderId"
+        val richiesta = Request.Builder()
+            .url(url)
+            .post(corpo.toRequestBody("application/json".toMediaType()))
+            .build()
+
+        val testo = try {
+            client.newCall(richiesta).execute().use { risposta ->
+                if (!risposta.isSuccessful) {
+                    throw MegaException(null, "MEGA ha risposto con un errore HTTP ${risposta.code}.")
+                }
+                risposta.body?.string().orEmpty()
+            }
+        } catch (e: MegaException) {
+            throw e
+        } catch (e: Exception) {
+            throw MegaException(null, "Non riesco a contattare MEGA. Controlla la connessione.")
+        }
+
+        val radice = runCatching { JsonParser.parseString(testo) }.getOrNull()
+            ?: throw MegaException(null, "Risposta di MEGA illeggibile.")
+
+        // Un errore secco arriva come numero nudo invece che come array.
+        if (radice.isJsonPrimitive) return radice
+        val array = radice as? JsonArray
+            ?: throw MegaException(null, "Risposta di MEGA in un formato inatteso.")
+        if (array.size() == 0) throw MegaException(null, "MEGA ha risposto senza dati.")
+        return array.get(0)
+    }
+
+    /** Il codice d'errore se l'elemento è un numero negativo, altrimenti `null`. */
+    private fun codiceErrore(elemento: JsonElement): Int? {
+        if (!elemento.isJsonPrimitive) return null
+        val numero = runCatching { elemento.asInt }.getOrNull() ?: return null
+        return if (numero < 0) numero else null
+    }
+
+    private fun messaggioPerCodice(codice: Int): String = when (codice) {
+        -9 -> "Cartella non trovata. Il link potrebbe essere stato revocato."
+        -11 -> "Accesso negato a questa cartella."
+        -16 -> "L'account che ha creato il link è stato sospeso."
+        -17 -> "MEGA ha superato il limite di traffico. Riprova più tardi."
+        -18 -> "La cartella è temporaneamente non disponibile. Riprova."
+        EAGAIN -> "MEGA è occupato. Riprova tra qualche istante."
+        -2 -> "Il link non è nel formato che MEGA si aspetta."
+        else -> "MEGA ha risposto con l'errore $codice."
+    }
+
+    private fun haEstensioneAudio(nome: String): Boolean =
+        nome.substringAfterLast('.', "").lowercase() in ESTENSIONI_AUDIO
+
+    companion object {
+        private const val BASE = "https://g.api.mega.co.nz/cs"
+        private const val EAGAIN = -3
+        private const val MAX_TENTATIVI = 4
+
+        val ESTENSIONI_AUDIO = setOf(
+            "mp3", "m4a", "aac", "wav", "flac", "ogg", "opus", "wma", "aif", "aiff"
+        )
+    }
+}

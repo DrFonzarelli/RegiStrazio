@@ -133,22 +133,4 @@ object DemoData {
         )
     )
 
-    /**
-     * Tracce placeholder per una cartella MEGA appena collegata — `generateFakeTracks`
-     * nel prototipo. Spariranno quando la lista arriverà davvero dall'API MEGA.
-     */
-    fun generateFakeTracks(folderId: String, count: Int): List<Traccia> {
-        val names = listOf(
-            "Take 1", "Idea riff", "Strofa base", "Ritornello", "Outro",
-            "Jam libera", "Intro", "Ponte", "Take 2", "Groove"
-        )
-        return (0 until count).map { i ->
-            Traccia(
-                id = "${folderId}_t$i",
-                cartellaId = folderId,
-                titolo = names[i % names.size],
-                durataSecondi = 80 + (i * 37) % 200
-            )
-        }
-    }
 }

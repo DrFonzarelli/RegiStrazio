@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -43,6 +44,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.registrazio.data.model.Cartella
+import com.example.registrazio.ui.StatoCollegamento
 import com.example.registrazio.ui.components.AppIconButton
 import com.example.registrazio.ui.components.AppTextField
 import com.example.registrazio.ui.components.appBorder
@@ -60,15 +62,23 @@ fun HomeScreen(
     cartelle: List<Cartella>,
     conteggioTracce: (String) -> Int,
     cartelleRinominabili: Set<String>,
+    collegamento: StatoCollegamento,
     onApriCartella: (String) -> Unit,
     onRinomina: (String, String) -> Unit,
-    onCollegaLink: (String) -> String?,
+    onCollegaLink: (String) -> Unit,
+    onPulisciErrore: () -> Unit,
     modifier: Modifier = Modifier,
     contentPadding: androidx.compose.foundation.layout.PaddingValues
 ) {
     // La cartella appena collegata si apre già in modalità rinomina: il nome
     // proposto ("Cartella A1b2C3") non dice nulla, tanto vale chiederlo subito.
     var daRinominare by remember { mutableStateOf<String?>(null) }
+
+    // La cartella nuova è l'ultima arrivata in elenco. Prima l'esito tornava
+    // come valore dalla funzione; ora che c'è la rete di mezzo arriva di qui.
+    LaunchedEffect(collegamento.completati) {
+        if (collegamento.completati > 0) daRinominare = cartelle.lastOrNull()?.id
+    }
 
     LazyColumn(modifier.fillMaxWidth(), contentPadding = contentPadding) {
         items(cartelle, key = { it.id }) { cartella ->
@@ -88,11 +98,9 @@ fun HomeScreen(
 
         item {
             GhostCard(
-                onCollega = { link ->
-                    val errore = onCollegaLink(link)
-                    if (errore == null) daRinominare = Cartella.parseFolderId(link)
-                    errore
-                }
+                collegamento = collegamento,
+                onCollega = onCollegaLink,
+                onPulisciErrore = onPulisciErrore
             )
         }
     }
@@ -223,16 +231,27 @@ private fun ConfirmChip(onClick: () -> Unit) {
  * `.ghost-card`: bordo tratteggiato, si apre a fisarmonica sul campo del link.
  */
 @Composable
-private fun GhostCard(onCollega: (String) -> String?) {
+private fun GhostCard(
+    collegamento: StatoCollegamento,
+    onCollega: (String) -> Unit,
+    onPulisciErrore: () -> Unit
+) {
     val colors = AppTheme.colors
     var aperta by remember { mutableStateOf(false) }
     var link by remember { mutableStateOf("") }
-    var errore by remember { mutableStateOf<String?>(null) }
 
     fun chiudi() {
         aperta = false
         link = ""
-        errore = null
+        onPulisciErrore()
+    }
+
+    // Il collegamento è andato a buon fine: la card si richiude da sola.
+    LaunchedEffect(collegamento.completati) {
+        if (collegamento.completati > 0) {
+            aperta = false
+            link = ""
+        }
     }
 
     Column(
@@ -290,19 +309,38 @@ private fun GhostCard(onCollega: (String) -> String?) {
                 ) {
                     AppTextField(
                         value = link,
-                        onValueChange = { link = it; errore = null },
+                        onValueChange = { link = it; onPulisciErrore() },
                         placeholder = "Incolla il link Mega…",
                         modifier = Modifier.weight(1f)
                     )
-                    GhostIconButton(AppIcons.X, "Annulla", colors.surfaceAlt, colors.textSecondary) {
-                        chiudi()
-                    }
-                    GhostIconButton(AppIcons.Check, "Collega", colors.accent, Color.White) {
-                        errore = onCollega(link)
-                        if (errore == null) chiudi()
+                    if (collegamento.inCorso) {
+                        // Leggere la cartella su MEGA richiede una chiamata di rete:
+                        // senza un segnale d'attesa sembrerebbe che il tasto non funzioni.
+                        Box(Modifier.size(32.dp), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                color = colors.accent,
+                                strokeWidth = 2.dp
+                            )
+                        }
+                    } else {
+                        GhostIconButton(
+                            AppIcons.X, "Annulla", colors.surfaceAlt, colors.textSecondary
+                        ) { chiudi() }
+                        GhostIconButton(
+                            AppIcons.Check, "Collega", colors.accent, Color.White
+                        ) { onCollega(link) }
                     }
                 }
-                errore?.let {
+                if (collegamento.inCorso) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "Leggo la cartella su MEGA…",
+                        color = colors.textMuted,
+                        fontSize = 12.5.sp
+                    )
+                }
+                collegamento.errore?.let {
                     Spacer(Modifier.height(8.dp))
                     Text(it, color = colors.danger, fontSize = 12.5.sp, lineHeight = 17.5.sp)
                 }

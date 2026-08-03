@@ -192,7 +192,10 @@ fun TrackCard(
                     horizontalArrangement = Arrangement.spacedBy(7.dp)
                 ) {
                     Text(
-                        "${secToLabel(traccia.durataSecondi)} min",
+                        // Durata 0 = ancora sconosciuta: la sapremo quando il
+                        // player aprirà il file. Meglio ammetterlo che stampare 0:00.
+                        if (traccia.durataSecondi > 0) "${secToLabel(traccia.durataSecondi)} min"
+                        else "--:-- min",
                         color = colors.textMuted,
                         fontSize = 11.5.sp
                     )

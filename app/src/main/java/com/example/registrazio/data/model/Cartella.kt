@@ -22,14 +22,8 @@ data class Cartella(
     val numTracce: Int = 0
 ) {
     companion object {
-        /** Estrae l'id cartella da un link MEGA, o null se il link non è valido. */
-        fun parseFolderId(link: String): String? {
-            if (!link.contains("/folder/")) return null
-            val after = link.substringAfter("/folder/", "")
-            if (after.isEmpty()) return null
-            val id = after.substringBefore('#').substringBefore('/').trim()
-            return id.ifEmpty { null }
-        }
+        // Il parsing del link sta in LinkMega.parse: lì serve anche la chiave di
+        // decrittazione, che senza non si va da nessuna parte.
 
         /** Nome provvisorio proposto quando si collega una cartella nuova. */
         fun suggestName(folderId: String): String = "Cartella " + folderId.take(6)

@@ -281,12 +281,42 @@ POST https://g.api.mega.co.nz/cs?id=1&n=FOLDER_ID
 ```
 
 La risposta contiene:
-- `g` → URL temporaneo per il download/streaming (HTTPS diretto)
+- `g` → URL temporaneo da cui scaricare i byte
 - `s` → dimensione file in bytes
 - `at` → attributi cifrati (nome file, se non già decriptato)
 
 Questo URL **scade** (tipicamente entro poche ore). Non cacharlo tra sessioni.
 Richiederlo fresco ogni volta prima di fare play o avviare un download.
+
+#### 3. I byte che arrivano da quell'URL sono cifrati
+
+> **Questo è il punto in cui è più facile sbagliare.** L'URL del comando `g`
+> **non** è un link a un file audio riproducibile. MEGA cifra i file lato client
+> e quell'URL serve i byte cifrati così come sono. Puntarci ExoPlayer non
+> produce audio, produce rumore.
+
+Ogni file va decifrato con **AES-128-CTR**, usando chiave e nonce ricavati dalla
+chiave del nodo (32 byte, decifrata con la chiave della cartella):
+
+```
+chiave AES = primi 16 byte  XOR  secondi 16 byte
+nonce      = byte 16..23
+blocco IV  = nonce (8 byte) || indice del blocco (8 byte, big-endian)
+```
+
+CTR è una scelta fortunata: è **seekabile**. Per far partire la decifratura dal
+byte `N` non serve leggere tutto quello che viene prima, basta impostare
+l'indice del blocco a `N / 16` e scartare i primi `N % 16` byte. È esattamente
+ciò che rende possibile lo streaming con la barra di avanzamento trascinabile.
+
+In pratica serve un `DataSource` di Media3 che avvolge quello HTTP e decifra il
+flusso mentre scorre, passando a ExoPlayer byte già in chiaro. ExoPlayer non
+sa e non deve sapere che dietro c'è MEGA.
+
+Lo stesso vale per il **download locale**: il file che arriva è cifrato e va
+decifrato prima di essere salvato in `cacheDir/audio/`. Una volta su disco è un
+file audio normale, quindi la riproduzione locale non passa dal `DataSource`
+speciale.
 
 ### Flusso sync MEGA (dentro il tasto Sincronizza)
 
@@ -311,10 +341,14 @@ Al play di una traccia:
     → ExoPlayer punta al percorsoLocale (nessuna rete)
   Altrimenti
     → Richiedi URL temporaneo MEGA via HTTP API
-    → ExoPlayer streamma da quell'URL
+    → ExoPlayer legge da quell'URL attraverso il DataSource che decifra AES-CTR
 ```
 
 Non esiste pre-scarico parziale: o si streamma o si usa il file locale.
+
+Nota: il ramo locale legge un file già in chiaro e non usa il DataSource
+speciale. Solo il ramo streaming decifra, perché solo lì i byte arrivano
+cifrati da MEGA (vedi *I byte che arrivano da quell'URL sono cifrati*).
 
 ### Gestione scadenza URL durante lo streaming
 
@@ -689,13 +723,14 @@ perché la BOM non le mostra): Firestore `26.5.0`, Auth `24.2.0`.
 | Foglio account + strumenti di test | ✅ | |
 | Identità persistente (`appUid`) | ✅ | `EncryptedSharedPreferences` con fallback |
 | Riproduzione audio | 🟡 | timer finto a 250 ms in `AppViewModel`, ExoPlayer mai istanziato |
-| Elenco tracce di una cartella collegata | 🟡 | `generateFakeTracks()`, MEGA mai contattato |
+| Collegamento di una cartella MEGA | ✅ | link letto davvero, nomi dei file decifrati |
+| Durata delle tracce da MEGA | ❌ | resta 0 (mostrata `--:--`) finché non apriremo il file con il player |
 | Waveform | 🟡 | equalizzatore animato decorativo, nessun dato reale |
 | Persistenza profili e cartelle | 🟡 | `ProfiliStore` = SharedPreferences + Gson, sta al posto di Firestore |
 | Firestore | ❌ | dipendenza presente, **mai importata** nel codice |
 | Firebase Anonymous Auth | ❌ | mai inizializzata |
 | Room (entity, DAO, database) | ❌ | dipendenza + KSP configurati, **zero classi scritte** |
-| MEGA HTTP API + crypto | ❌ | OkHttp presente ma mai usato |
+| MEGA HTTP API + crypto | 🟡 | elenco file e decifratura nomi fatti; manca lo scarico dei byte |
 | Tasto Sincronizza | ❌ | |
 | Banner offline | ❌ | |
 | Download reale su disco | ❌ | il flag `scaricata` si limita a cambiare stato in memoria |
@@ -704,9 +739,9 @@ perché la BOM non le mostra): Firestore `26.5.0`, Auth `24.2.0`.
 si perde tutto tranne l'identità e ciò che sta in `ProfiliStore`.
 
 Detto in modo diretto, perché è la domanda che viene naturale fare:
-**il link MEGA non collega niente** (il link viene solo validato nella forma, poi
-le tracce sono inventate da `generateFakeTracks()`), **i commenti non vanno su
-Firestore** (restano in RAM, anche se il toast dice "Commento salvato"), e
+**il link MEGA ora collega davvero** (l'app interroga MEGA e mostra i nomi veri
+dei file, decifrati con la chiave del link), ma **i commenti non vanno ancora su
+Firestore** (restano in RAM, anche se il toast dice "Commento salvato") e
 **il tasto play non produce audio** (avanza un contatore ogni 250 ms).
 
 #### Bug aperto: le tracce delle cartelle collegate non vengono ricaricate
@@ -719,13 +754,15 @@ cartelle = DemoData.cartelle + profiliStore.cartelle(),
 tracce   = DemoData.tracce   // <- le tracce finte generate al collegamento sono perse
 ```
 
-*Effetto visibile:* colleghi una cartella, compaiono 4 tracce, chiudi e riapri
-l'app — la cartella è ancora in elenco ma segna "0 tracce" ed è vuota dentro.
+*Effetto visibile:* colleghi una cartella, compaiono le tracce lette da MEGA,
+chiudi e riapri l'app — la cartella è ancora in elenco ma segna "0 tracce" ed è
+vuota dentro.
 
-*Nota:* si risolve da sé quando le tracce arriveranno da Firestore/MEGA invece
-che da `generateFakeTracks()`. Non vale la pena persisterle finte: sarebbe lavoro
-buttato. Va però tenuto presente che finché quel pezzo non c'è, **questa
-incoerenza è attesa** — non è un errore nuovo da investigare.
+*Nota:* si risolve quando le tracce arriveranno da Firestore, che è il posto
+dove devono stare. Rileggerle da MEGA a ogni avvio sarebbe lento e inutile: MEGA
+serve per i byte dell'audio, non come elenco da riscaricare ogni volta. Finché
+Firestore non c'è, **questa incoerenza è attesa** — non è un errore nuovo da
+investigare.
 
 **Stato della build:** l'ultima build ha superato `kspDebugKotlin`,
 `processDebugGoogleServices` e tutto il packaging delle risorse, e si è fermata
