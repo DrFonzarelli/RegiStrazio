@@ -725,7 +725,7 @@ perché la BOM non le mostra): Firestore `26.5.0`, Auth `24.2.0`.
 | Riproduzione audio | 🟡 | timer finto a 250 ms in `AppViewModel`, ExoPlayer mai istanziato |
 | Collegamento di una cartella MEGA | ✅ | **provato su una cartella vera**; ricollegare la stessa cartella la ricarica |
 | Durata delle tracce da MEGA | ❌ | resta 0 (mostrata `--:--`) finché non apriremo il file con il player |
-| Nome della cartella letto da MEGA | ❌ | **aperto**: due ipotesi su quale sia il nodo radice sono fallite, sotto diagnostica |
+| Nome della cartella letto da MEGA | ✅ | risolto provando tutti i nodi non-file, vedi errore 7 |
 | Waveform | 🟡 | equalizzatore animato decorativo, nessun dato reale |
 | Persistenza profili e cartelle | 🟡 | `ProfiliStore` = SharedPreferences + Gson, sta al posto di Firestore |
 | Firestore | ❌ | dipendenza presente, **mai importata** nel codice |
@@ -858,13 +858,24 @@ sistemata la radice, al riavvio sarebbe tornato il nome di ripiego.
 *Da ricordare:* quando un dato sbagliato **sopravvive a un fix**, i motivi sono
 due e vanno cercati entrambi — uno che lo produce e uno che lo conserva.
 
-*Non ancora chiuso:* sistemate entrambe le cause, il nome resta comunque quello
-di ripiego. Le due ipotesi su quale nodo sia la radice (`t = 2`, poi l'handle
-uguale all'id del link) erano tutt'e due sbagliate, e MEGA non è raggiungibile
-dall'ambiente in cui si scrive il codice: senza vedere la risposta vera si tira
-a indovinare. Ora il codice prova a decifrare gli attributi di **tutti** i nodi
-non-file e logga cosa trova sotto il tag `MegaApi`. La lezione vale in generale:
-dopo due ipotesi sbagliate di fila conviene smettere di indovinare e misurare.
+*Come è finita:* servite tre versioni. Le prime due indovinavano quale fosse il
+nodo radice e sbagliavano; la terza ha smesso di indovinare e prova a decifrare
+gli attributi di **tutti** i nodi non-file, tenendo il primo che funziona.
+
+Il log dal telefono ha poi detto com'è fatta davvero la radice di una cartella
+condivisa, e vale la pena averlo scritto perché è controintuitivo:
+
+- ha **`t = 1`**, come una cartella qualsiasi — `t = 2` è la radice
+  dell'*account* e su link pubblico non compare proprio, non essendo loggati
+- il suo handle **non è** l'id che sta nel link. Quell'id è un handle di
+  *condivisione*, una cosa diversa dal nodo
+- **ha un genitore**, quindi nemmeno "il nodo senza `p`" la identifica
+- i suoi attributi si decifrano con la chiave presa dal suo campo `k`, come
+  quelli di ogni altro nodo
+
+*Da ricordare:* dopo due ipotesi sbagliate di fila, smettere di indovinare e
+misurare. Qui sono bastate cinque righe di log per chiudere una cosa che aveva
+già bruciato due giri di prove.
 
 #### 8. Warning KSP sui source set Kotlin
 

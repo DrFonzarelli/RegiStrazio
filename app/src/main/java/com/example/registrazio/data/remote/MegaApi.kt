@@ -190,9 +190,13 @@ class MegaApi(
      * Nome della cartella condivisa.
      *
      * Non diamo per scontato quale nodo sia la radice: proviamo a decifrare gli
-     * attributi di tutti i nodi non-file e teniamo il primo che funziona, dando
-     * la precedenza a quello il cui handle coincide con l'id del link e poi a
-     * quello senza genitore.
+     * attributi di tutti i nodi non-file e teniamo il primo che funziona.
+     *
+     * Verificato su una cartella vera: la radice di una condivisione ha `t = 1`
+     * come una cartella qualsiasi, **ha un genitore**, e il suo handle **non è**
+     * l'id del link — quello è un handle di condivisione, un'altra cosa. Quindi
+     * l'ordinamento qui sotto è solo una preferenza opportunistica per altre
+     * forme di cartella: non fidarsene come criterio di riconoscimento.
      *
      * Anche il modo di cifrare varia: certi nodi portano un campo `k` come tutti
      * gli altri, per altri gli attributi sono cifrati direttamente con la chiave
