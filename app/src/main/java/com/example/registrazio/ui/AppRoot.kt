@@ -204,6 +204,7 @@ fun AppRoot(vm: AppViewModel = viewModel()) {
                                 scaricateSuTotali = scaricate to tracce.size,
                                 bulkInCorso = state.bulkDownload?.cartellaId == schermata.cartellaId,
                                 tracciaInRiproduzione = state.riproduzione.tracciaId,
+                                audioAttivo = state.riproduzione.audioAttivo,
                                 posizioneSecondi = state.riproduzione.posizioneSecondi,
                                 mioAppUid = state.identita?.appUid.orEmpty(),
                                 onCambiaOrdinamento = vm::cambiaOrdinamento,
@@ -232,6 +233,7 @@ fun AppRoot(vm: AppViewModel = viewModel()) {
                         titolo = traccia.titolo,
                         posizioneSecondi = state.riproduzione.posizioneSecondi,
                         inRiproduzione = state.riproduzione.inRiproduzione,
+                        audioAttivo = state.riproduzione.audioAttivo,
                         onVaiAllaTraccia = {
                             vm.apriCartella(traccia.cartellaId)
                             scope.launch {

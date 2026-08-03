@@ -45,7 +45,15 @@ enum class Ordinamento { DEFAULT, PREFERITE }
 data class StatoRiproduzione(
     val tracciaId: String? = null,
     val inRiproduzione: Boolean = false,
-    val posizioneSecondi: Float = 0f
+    val posizioneSecondi: Float = 0f,
+    /**
+     * L'audio sta uscendo davvero, non "abbiamo premuto play".
+     *
+     * Fra il tocco e il primo suono passa il tempo di chiedere l'indirizzo a
+     * MEGA e riempire il buffer: l'equalizzatore deve seguire questo, non
+     * l'intenzione, o si mette a ballare sul silenzio.
+     */
+    val audioAttivo: Boolean = false
 )
 
 /** Avanzamento dello "Scarica tutte" sulla cartella aperta. */
@@ -134,7 +142,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             playJob?.cancel()
             playJob = null
             _state.update {
-                it.copy(riproduzione = it.riproduzione.copy(inRiproduzione = false, posizioneSecondi = 0f))
+                it.copy(
+                    riproduzione = it.riproduzione.copy(
+                        inRiproduzione = false,
+                        posizioneSecondi = 0f,
+                        audioAttivo = false
+                    )
+                )
             }
         }
         player.onErrore = { messaggio ->
@@ -263,7 +277,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 riproduzione = StatoRiproduzione(
                     tracciaId = tracciaId,
                     inRiproduzione = true,
-                    posizioneSecondi = da.coerceAtLeast(0f)
+                    posizioneSecondi = da.coerceAtLeast(0f),
+                    audioAttivo = false
                 )
             )
         }
@@ -319,9 +334,15 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             delay(TICK_MS)
             val posizione = player.posizioneSecondi
             registraAscolto(tracciaId, TICK_MS / 1000f, posizione)
+            val suonaDavvero = player.staSuonando
             _state.update { s ->
                 if (s.riproduzione.tracciaId != tracciaId) s
-                else s.copy(riproduzione = s.riproduzione.copy(posizioneSecondi = posizione))
+                else s.copy(
+                    riproduzione = s.riproduzione.copy(
+                        posizioneSecondi = posizione,
+                        audioAttivo = suonaDavvero
+                    )
+                )
             }
         }
     }
@@ -349,7 +370,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         playJob = null
         player.ferma()
         tracciaCaricata = null
-        _state.update { it.copy(riproduzione = it.riproduzione.copy(inRiproduzione = false)) }
+        _state.update {
+            it.copy(riproduzione = it.riproduzione.copy(inRiproduzione = false, audioAttivo = false))
+        }
     }
 
     private fun avanzaDiUnTick(tracciaId: String, durata: Float) {
@@ -377,7 +400,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
             val indice = ((pos / durata) * BUCKETS).toInt().coerceIn(0, BUCKETS - 1)
             s.copy(
-                riproduzione = r.copy(posizioneSecondi = pos),
+                riproduzione = r.copy(posizioneSecondi = pos, audioAttivo = true),
                 tracce = s.tracce.map { t ->
                     if (t.id != tracciaId) t
                     else t.copy(
@@ -395,7 +418,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         playJob?.cancel()
         playJob = null
         player.pausa()
-        _state.update { it.copy(riproduzione = it.riproduzione.copy(inRiproduzione = false)) }
+        _state.update {
+            it.copy(riproduzione = it.riproduzione.copy(inRiproduzione = false, audioAttivo = false))
+        }
     }
 
     /**

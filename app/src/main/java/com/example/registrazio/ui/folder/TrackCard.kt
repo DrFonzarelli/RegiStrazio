@@ -90,6 +90,7 @@ fun TrackCard(
     traccia: Traccia,
     posizioneSecondi: Float,
     inRiproduzione: Boolean,
+    audioAttivo: Boolean,
     mioAppUid: String,
     azioni: TrackCardActions,
     onChiediEliminazione: (Commento) -> Unit,
@@ -233,7 +234,7 @@ fun TrackCard(
             posizioneSecondi = posizioneSecondi,
             commenti = commenti,
             indiceSelezionato = indiceSelezionato,
-            inRiproduzione = inRiproduzione,
+            inRiproduzione = audioAttivo,
             onMarkerCliccato = ::selezionaMarker,
             onSposta = azioni.onSposta
         )

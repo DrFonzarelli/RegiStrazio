@@ -82,7 +82,17 @@ Come si incastrano i tre pezzi, dall'inizio alla fine:
 1. **Collegamento** — qualcuno incolla il link di una cartella MEGA. L'app
    interroga MEGA, si fa dare l'elenco dei file e scrive un documento in
    `tracce/` per ognuno. Il link finisce in `cartelle/`, così anche gli altri
-   quattro se la ritrovano senza incollare niente.
+   quattro se la ritrovano senza incollare niente: **una persona sola collega
+   la cartella, e da lì in poi la vedono tutti**.
+
+   Gli altri non rileggono MEGA per sapere cosa c'è dentro — quello lo dice
+   `tracce/`. MEGA lo contattano solo quando premono play, per farsi dare
+   l'indirizzo dei byte di *quel* file.
+
+   Va detto chiaramente: il link contiene la chiave di decrittazione, quindi
+   metterlo in `cartelle/` significa che chiunque possa leggere quel documento
+   può ascoltare l'audio. Per cinque persone che condividono già la cartella è
+   esattamente il comportamento voluto, ma è una scelta, non un dettaglio.
 2. **Ascolto in streaming** — al play l'app chiede a MEGA un URL temporaneo per
    quel file e lo passa a ExoPlayer. Niente resta sul telefono. Se l'URL scade a
    metà ascolto se ne chiede un altro e si riprende dallo stesso punto.
@@ -722,10 +732,10 @@ perché la BOM non le mostra): Firestore `26.5.0`, Auth `24.2.0`.
 | Mini player | ✅ | logica di scollegamento inclusa |
 | Foglio account + strumenti di test | ✅ | |
 | Identità persistente (`appUid`) | ✅ | `EncryptedSharedPreferences` con fallback |
-| Riproduzione audio da MEGA | 🟡 | ExoPlayer + decifratura AES-CTR scritti, **mai provati su un telefono** |
+| Riproduzione audio da MEGA | ✅ | **provata**: audio, seek dai commenti, pausa/riprendi |
 | Riproduzione tracce demo | 🟡 | restano sul timer finto: non hanno un file dietro |
 | Collegamento di una cartella MEGA | ✅ | **provato su una cartella vera**; ricollegare la stessa cartella la ricarica |
-| Durata delle tracce da MEGA | 🟡 | la scrive il player appena apre il file; prima resta `--:--` |
+| Durata delle tracce da MEGA | 🟡 | arriva al primo play di *quella* traccia; le altre restano `--:--` |
 | Nome della cartella letto da MEGA | ✅ | risolto provando tutti i nodi non-file, vedi errore 7 |
 | Waveform | 🟡 | equalizzatore animato decorativo, nessun dato reale |
 | Persistenza profili e cartelle | 🟡 | `ProfiliStore` = SharedPreferences + Gson, sta al posto di Firestore |
@@ -735,7 +745,7 @@ perché la BOM non le mostra): Firestore `26.5.0`, Auth `24.2.0`.
 | MEGA HTTP API + crypto | 🟡 | elenco e decifratura **verificati sul campo**; manca lo scarico dei byte |
 | Tasto Sincronizza | ❌ | |
 | Banner offline | ❌ | |
-| Download reale su disco | ❌ | il flag `scaricata` si limita a cambiare stato in memoria |
+| Download reale su disco | ❌ | il tasto cambia solo un'icona: non scarica niente |
 
 **Attenzione:** tutto ciò che è 🟡 o ❌ vive **solo in memoria**. Chiudendo l'app
 si perde tutto tranne l'identità e ciò che sta in `ProfiliStore`.
@@ -878,7 +888,32 @@ condivisa, e vale la pena averlo scritto perché è controintuitivo:
 misurare. Qui sono bastate cinque righe di log per chiudere una cosa che aveva
 già bruciato due giri di prove.
 
-#### 8. Warning KSP sui source set Kotlin
+#### 8. Il cursore che sfarfallava tornando a inizio traccia
+
+*Sintomo:* trascinando il cursore sulla timeline, questo spariva e ricompariva
+di continuo all'inizio della traccia, rendendo impossibile mirare un punto.
+
+*Due cause sovrapposte, come al solito:*
+
+1. **Un anello che si retroalimentava.** La nuova posizione veniva calcolata
+   dalla posizione del cursore, che il trascinamento stesso stava aggiornando.
+   Il riquadro si sposta insieme al cursore, quindi leggerne la posizione mentre
+   lo si trascina si morde la coda.
+2. **Un seek per ogni movimento del dito.** Il player ribufferizzava in
+   continuazione, e nel frattempo il ciclo di aggiornamento riscriveva la
+   posizione con quella del player — vicina a zero proprio perché stava
+   ricaricando.
+
+*Fix:* durante il trascinamento comanda il dito. Si somma lo spostamento
+(`delta`) invece di ricalcolare dalla posizione, e il seek parte **una sola
+volta**, quando si stacca il dito.
+
+*Da ricordare:* quando un gesto muove l'elemento che il gesto stesso sta
+misurando, va sempre usata la somma degli spostamenti, mai la posizione
+assoluta. E un `pointerInput` legge per sempre i valori della composizione in
+cui è nato: quelli che cambiano vanno passati con `rememberUpdatedState`.
+
+#### 9. Warning KSP sui source set Kotlin
 
 *Fix applicato:* `android.disallowKotlinSourceSets=false` in `gradle.properties`.
 

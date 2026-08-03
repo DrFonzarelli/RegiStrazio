@@ -54,7 +54,10 @@ import kotlin.random.Random
 fun MiniPlayer(
     titolo: String,
     posizioneSecondi: Float,
+    /** Play premuto: decide l'icona, che non deve sfarfallare mentre bufferizza. */
     inRiproduzione: Boolean,
+    /** Audio davvero in corso: decide l'equalizzatore. */
+    audioAttivo: Boolean,
     onVaiAllaTraccia: () -> Unit,
     onTogglePlay: () -> Unit,
     onCommenta: () -> Unit,
@@ -82,7 +85,7 @@ fun MiniPlayer(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            MiniEqualizer(inRiproduzione)
+            MiniEqualizer(audioAttivo)
 
             Column(
                 Modifier

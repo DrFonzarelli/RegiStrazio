@@ -26,6 +26,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -62,6 +63,7 @@ fun Timeline(
     posizioneSecondi: Float,
     commenti: List<Commento>,
     indiceSelezionato: Int?,
+    /** Audio davvero in corso: muove l'equalizzatore. Non è "play premuto". */
     inRiproduzione: Boolean,
     onMarkerCliccato: (Int) -> Unit,
     onSposta: (Float) -> Unit,
@@ -130,27 +132,56 @@ fun Timeline(
         // .playhead — un rientro dell'1.1% per non farlo mai toccare il bordo
         val inset = 0.011f
         val frazionePos = (posizioneSecondi / durataSicura).coerceIn(0f, 1f)
-        val frazioneVisiva = inset + frazionePos * (1f - inset * 2)
+
+        // Durante il trascinamento comanda il dito, non il player.
+        //
+        // Prima la nuova posizione veniva ricavata dalla posizione del cursore,
+        // che il trascinamento stesso stava aggiornando: un anello che si
+        // retroalimentava. E ogni movimento faceva partire un seek, mentre il
+        // ciclo di aggiornamento riscriveva la posizione con quella del player,
+        // ancora vicina a zero perché stava ribufferizzando. Da qui il cursore
+        // che sfarfallava tornando all'inizio.
+        var frazioneTrascinata by remember { mutableStateOf<Float?>(null) }
+
+        // Il blocco dei gesti si ricrea solo se cambiano le sue chiavi: senza
+        // questo leggerebbe per sempre i valori della prima composizione.
+        val frazioneCorrente by rememberUpdatedState(frazionePos)
+        val spostaAggiornato by rememberUpdatedState(onSposta)
+        val durataAggiornata by rememberUpdatedState(durataSecondi)
+
+        val frazioneVisiva = inset + (frazioneTrascinata ?: frazionePos) * (1f - inset * 2)
 
         Box(
             Modifier
                 .offset(x = larghezza * frazioneVisiva - PLAYHEAD_WIDTH / 2)
                 .width(PLAYHEAD_WIDTH)
                 .height(LINE_HEIGHT)
-                .pointerInput(durataSecondi, larghezza) {
+                .pointerInput(larghezza) {
                     detectHorizontalDragGestures(
-                        onDragStart = { inTrascinamento = true },
-                        onDragEnd = { inTrascinamento = false },
-                        onDragCancel = { inTrascinamento = false }
-                    ) { change, _ ->
+                        onDragStart = {
+                            inTrascinamento = true
+                            frazioneTrascinata = frazioneCorrente
+                        },
+                        onDragEnd = {
+                            inTrascinamento = false
+                            // Un solo salto, alla fine: seguire il dito con un
+                            // seek per movimento tiene il player a ribufferizzare
+                            // e non si riesce mai a mirare un punto.
+                            frazioneTrascinata?.let { spostaAggiornato(it * durataAggiornata) }
+                            frazioneTrascinata = null
+                        },
+                        onDragCancel = {
+                            inTrascinamento = false
+                            frazioneTrascinata = null
+                        }
+                    ) { change, delta ->
                         change.consume()
-                        // La posizione assoluta del dito conta più del delta:
-                        // evita che il cursore accumuli deriva su trascinamenti lunghi.
-                        val xAssoluto = larghezza * frazioneVisiva -
-                            PLAYHEAD_WIDTH / 2 +
-                            with(density) { change.position.x.toDp() }
-                        val nuovaFrazione = (xAssoluto / larghezza).coerceIn(0f, 1f)
-                        onSposta(nuovaFrazione * durataSecondi)
+                        // Somma di spostamenti, non ricalcolo dalla posizione:
+                        // il riquadro si muove col cursore, e leggerne la
+                        // posizione mentre lo si trascina si morde la coda.
+                        val passo = with(density) { delta.toDp() } / larghezza
+                        frazioneTrascinata =
+                            ((frazioneTrascinata ?: frazioneCorrente) + passo).coerceIn(0f, 1f)
                     }
                 },
             contentAlignment = Alignment.Center
