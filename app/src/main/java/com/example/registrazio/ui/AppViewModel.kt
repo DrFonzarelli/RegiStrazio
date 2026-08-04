@@ -89,6 +89,14 @@ data class AppState(
 )
 
 /**
+ * Testo arrivato dal menu "Condividi" di un'altra app.
+ *
+ * [seq] distingue due invii identici di fila: senza, condividere due volte lo
+ * stesso link non farebbe succedere niente la seconda volta.
+ */
+data class TestoCondiviso(val testo: String, val seq: Int)
+
+/**
  * Collegamento di una cartella MEGA in corso.
  *
  * Serve uno stato perché ora c'è di mezzo la rete: prima la funzione rispondeva
@@ -104,7 +112,17 @@ data class StatoCollegamento(
      * e ha ripiegato su "Cartella A6kViD": vale la pena chiederlo subito.
      * Quando il nome vero c'è, aprire la rinomina sarebbe solo un intralcio.
      */
-    val chiediNome: Boolean = false
+    val chiediNome: Boolean = false,
+
+    /**
+     * Link arrivato da una condivisione, da mettere nel campo già pronto.
+     *
+     * Il collegamento **non** parte da solo: chiunque può condividere testo
+     * verso l'app, e una cartella che si aggiunge da sé sarebbe difficile
+     * perfino da spiegare. La conferma resta un gesto dell'utente.
+     */
+    val linkPrecompilato: String? = null,
+    val seqPrecompilato: Int = 0
 )
 
 @OptIn(UnstableApi::class)
@@ -143,6 +161,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private var tracciaCaricata: String? = null
     private var bulkJob: Job? = null
     private var seqMessaggi = 0L
+
+    /** Condivisione arrivata prima dell'onboarding: si riprende dopo il Gate. */
+    private var condivisioneInAttesa: String? = null
 
     /** Secondi ascoltati di fila nella sessione corrente, per il conteggio degli ascolti. */
     private var ascoltoAccumulato = 0f
@@ -238,6 +259,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             )
         }
         mostra("Benvenuto, ${utente.nome}!")
+        riprendiCondivisioneInAttesa()
         return null
     }
 
@@ -246,6 +268,53 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         identityManager.adottaIdentita(utente)
         _state.update { it.copy(identita = utente, schermata = Schermata.Home) }
         mostra("Bentornato, ${utente.nome}!")
+        riprendiCondivisioneInAttesa()
+    }
+
+    // ---------- condivisione da altre app ----------
+
+    /**
+     * Un'altra app ha condiviso del testo con RegiStrazio.
+     *
+     * MEGA non manda l'indirizzo nudo ma una frase intorno, quindi il link va
+     * pescato dal testo prima di poterlo usare.
+     */
+    fun riceviCondivisione(testo: String) {
+        val link = LinkMega.cercaNelTesto(testo)
+        if (link == null) {
+            mostra("Nel testo condiviso non ho trovato un link di cartella MEGA.")
+            return
+        }
+        if (_state.value.identita == null) {
+            // Prima dell'onboarding la ghost card non esiste ancora: il link si
+            // mette da parte, altrimenti andrebbe perso proprio a chi apre
+            // l'app per la prima volta.
+            condivisioneInAttesa = link
+            return
+        }
+        precompilaCollegamento(link)
+    }
+
+    private fun precompilaCollegamento(link: String) {
+        _state.update {
+            it.copy(
+                // La ghost card sta nella Home: se sei dentro una cartella non
+                // la vedresti comparire.
+                schermata = Schermata.Home,
+                collegamento = it.collegamento.copy(
+                    linkPrecompilato = link,
+                    seqPrecompilato = it.collegamento.seqPrecompilato + 1,
+                    errore = null
+                )
+            )
+        }
+    }
+
+    /** Da chiamare appena l'identità esiste, per riprendere una condivisione in attesa. */
+    private fun riprendiCondivisioneInAttesa() {
+        val link = condivisioneInAttesa ?: return
+        condivisioneInAttesa = null
+        precompilaCollegamento(link)
     }
 
     // ---------- navigazione ----------
@@ -742,6 +811,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun pulisciErroreCollegamento() = aggiornaCollegamento { it.copy(errore = null) }
+
+    /** Né l'app MEGA né un browser hanno raccolto la richiesta: meglio dirlo. */
+    fun megaNonApribile() = mostra("Non riesco ad aprire MEGA su questo telefono.")
 
     private fun aggiornaCollegamento(blocco: (StatoCollegamento) -> StatoCollegamento) =
         _state.update { it.copy(collegamento = blocco(it.collegamento)) }

@@ -9,10 +9,12 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -246,7 +248,15 @@ fun AppTextField(
     keyboardOptions: androidx.compose.foundation.text.KeyboardOptions =
         androidx.compose.foundation.text.KeyboardOptions.Default,
     keyboardActions: androidx.compose.foundation.text.KeyboardActions =
-        androidx.compose.foundation.text.KeyboardActions.Default
+        androidx.compose.foundation.text.KeyboardActions.Default,
+    /**
+     * Contenuto agganciato al bordo destro, dentro il campo.
+     *
+     * Serve per la crocetta che svuota: è il posto in cui la cercano tutti,
+     * perché è dove sta in ogni barra di ricerca. Fuori dal campo occuperebbe
+     * uno spazio suo e si confonderebbe con i tasti dell'azione.
+     */
+    trailing: (@Composable () -> Unit)? = null
 ) {
     val colors = AppTheme.colors
     val interaction = remember { MutableInteractionSource() }
@@ -274,11 +284,21 @@ fun AppTextField(
         keyboardOptions = keyboardOptions,
         keyboardActions = keyboardActions,
         decorationBox = { inner ->
-            Box(contentAlignment = if (textAlign == TextAlign.Center) Alignment.Center else Alignment.CenterStart) {
-                if (value.isEmpty() && placeholder.isNotEmpty()) {
-                    Text(placeholder, color = colors.textMuted, fontSize = fontSize)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    Modifier.weight(1f),
+                    contentAlignment =
+                        if (textAlign == TextAlign.Center) Alignment.Center else Alignment.CenterStart
+                ) {
+                    if (value.isEmpty() && placeholder.isNotEmpty()) {
+                        Text(placeholder, color = colors.textMuted, fontSize = fontSize)
+                    }
+                    inner()
                 }
-                inner()
+                trailing?.let {
+                    Spacer(Modifier.width(4.dp))
+                    it()
+                }
             }
         }
     )

@@ -53,6 +53,7 @@ import com.example.registrazio.ui.theme.AppIcon
 import com.example.registrazio.ui.theme.AppIcons
 import com.example.registrazio.ui.theme.AppTheme
 import com.example.registrazio.ui.theme.Radius
+import com.example.registrazio.util.apriMega
 
 /**
  * Elenco delle cartelle di prove, più la ghost card per collegarne una nuova.
@@ -67,6 +68,7 @@ fun HomeScreen(
     onRinomina: (String, String) -> Unit,
     onCollegaLink: (String) -> Unit,
     onPulisciErrore: () -> Unit,
+    onNonApreMega: () -> Unit,
     modifier: Modifier = Modifier,
     contentPadding: androidx.compose.foundation.layout.PaddingValues
 ) {
@@ -102,7 +104,8 @@ fun HomeScreen(
             GhostCard(
                 collegamento = collegamento,
                 onCollega = onCollegaLink,
-                onPulisciErrore = onPulisciErrore
+                onPulisciErrore = onPulisciErrore,
+                onNonApreMega = onNonApreMega
             )
         }
     }
@@ -236,9 +239,11 @@ private fun ConfirmChip(onClick: () -> Unit) {
 private fun GhostCard(
     collegamento: StatoCollegamento,
     onCollega: (String) -> Unit,
-    onPulisciErrore: () -> Unit
+    onPulisciErrore: () -> Unit,
+    onNonApreMega: () -> Unit
 ) {
     val colors = AppTheme.colors
+    val contesto = androidx.compose.ui.platform.LocalContext.current
     var aperta by remember { mutableStateOf(false) }
     var link by remember { mutableStateOf("") }
 
@@ -246,6 +251,16 @@ private fun GhostCard(
         aperta = false
         link = ""
         onPulisciErrore()
+    }
+
+    // Un link condiviso da un'altra app: la card si apre e si riempie, ma il
+    // collegamento resta un gesto dell'utente. Si osserva la sequenza e non il
+    // testo, così condividere due volte lo stesso link funziona due volte.
+    LaunchedEffect(collegamento.seqPrecompilato) {
+        collegamento.linkPrecompilato?.let {
+            link = it
+            aperta = true
+        }
     }
 
     // Il collegamento è andato a buon fine: la card si richiude da sola.
@@ -313,7 +328,28 @@ private fun GhostCard(
                         value = link,
                         onValueChange = { link = it; onPulisciErrore() },
                         placeholder = "Incolla il link Mega…",
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
+                        // Svuotare è un'azione sul campo, quindi sta dentro al
+                        // campo — dove la cerca chiunque abbia mai usato una
+                        // barra di ricerca — e compare solo se c'è qualcosa da
+                        // svuotare.
+                        trailing = if (link.isEmpty()) null else {
+                            {
+                                Box(
+                                    Modifier
+                                        .size(20.dp)
+                                        .clip(androidx.compose.foundation.shape.CircleShape)
+                                        .background(colors.surfaceAlt)
+                                        .clickable(
+                                            interactionSource = remember { MutableInteractionSource() },
+                                            indication = null
+                                        ) { link = ""; onPulisciErrore() },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    AppIcon(AppIcons.X, 10.dp, colors.textSecondary)
+                                }
+                            }
+                        }
                     )
                     if (collegamento.inCorso) {
                         // Leggere la cartella su MEGA richiede una chiamata di rete:
@@ -326,9 +362,14 @@ private fun GhostCard(
                             )
                         }
                     } else {
+                        // Posizione fissa: se cambiasse mestiere a seconda del
+                        // campo, prima o poi si finirebbe fuori dall'app volendo
+                        // cancellare, o viceversa.
                         GhostIconButton(
-                            AppIcons.X, "Annulla", colors.surfaceAlt, colors.textSecondary
-                        ) { chiudi() }
+                            AppIcons.Cloud, "Apri MEGA", colors.surfaceAlt, colors.textSecondary
+                        ) {
+                            if (!apriMega(contesto)) onNonApreMega()
+                        }
                         GhostIconButton(
                             AppIcons.Check, "Collega", colors.accent, Color.White
                         ) { onCollega(link) }

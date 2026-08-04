@@ -58,6 +58,33 @@ data class LinkMega(val folderId: String, val chiave: ByteArray) {
             if (chiave.size != 16) return null
             return LinkMega(id, chiave)
         }
+
+        /**
+         * Pesca un link di cartella dentro un testo qualsiasi.
+         *
+         * Serve per la condivisione: MEGA non manda l'indirizzo nudo ma una
+         * frase intorno ("Guarda questa cartella: https://mega.nz/folder/…"),
+         * e passarla così com'è a [parse] non funzionerebbe.
+         *
+         * Restituisce il testo del link, non il [LinkMega] già decomposto: chi
+         * chiama lo mette nel campo perché l'utente lo veda e lo confermi.
+         */
+        fun cercaNelTesto(testo: String): String? {
+            for (candidato in SPEZZA_TESTO.split(testo)) {
+                // Un link dentro una frase si porta dietro la punteggiatura,
+                // spesso da entrambi i lati: «(https://mega.nz/folder/…),».
+                // Toglierla è sicuro perché nessuno di questi caratteri
+                // appartiene all'alfabeto base64 della chiave.
+                val ripulito = candidato
+                    .trimStart('(', '[', '<', '"', '\'')
+                    .trimEnd('.', ',', ';', ':', ')', ']', '>', '"', '\'')
+                if (parse(ripulito) != null) return ripulito
+            }
+            return null
+        }
+
+        /** Spazi, a capo e tabulazioni: tutto ciò che separa un URL dal resto. */
+        private val SPEZZA_TESTO = Regex("\\s+")
     }
 }
 

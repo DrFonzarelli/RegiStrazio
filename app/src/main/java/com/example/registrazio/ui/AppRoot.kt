@@ -62,8 +62,17 @@ import kotlinx.coroutines.launch
 private val ID_DEMO = DemoData.cartelle.map { it.id }.toSet()
 
 @Composable
-fun AppRoot(vm: AppViewModel = viewModel()) {
+fun AppRoot(
+    testoCondiviso: TestoCondiviso? = null,
+    vm: AppViewModel = viewModel()
+) {
     val state by vm.state.collectAsState()
+
+    // Sulla sequenza e non sul testo: due condivisioni identiche di fila devono
+    // arrivare entrambe.
+    LaunchedEffect(testoCondiviso?.seq) {
+        testoCondiviso?.let { vm.riceviCondivisione(it.testo) }
+    }
 
     RegiStrazioTheme(darkTheme = state.temaScuro) {
         val colors = AppTheme.colors
@@ -188,6 +197,7 @@ fun AppRoot(vm: AppViewModel = viewModel()) {
                             onRinomina = vm::rinominaCartella,
                             onCollegaLink = vm::collegaCartella,
                             onPulisciErrore = vm::pulisciErroreCollegamento,
+                            onNonApreMega = vm::megaNonApribile,
                             modifier = colonna,
                             contentPadding = padding
                         )

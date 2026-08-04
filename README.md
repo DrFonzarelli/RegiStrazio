@@ -89,6 +89,26 @@ MEGA. Quando in questo documento si legge "traccia", il significato dipende dal
 contesto — il documento di metadati, oppure il file audio. Non sono la stessa
 cosa e non stanno nello stesso posto.
 
+### Come arriva un link nell'app
+
+Tre strade, in ordine di comodità:
+
+1. **Condivisione da MEGA** — "Ottieni link" → "Condividi" → RegiStrazio.
+   L'app si apre con la ghost card già compilata. È la via breve.
+2. **Tasto MEGA nella ghost card** (☁) — apre l'app MEGA, o il sito se non c'è.
+   Serve a chi parte da RegiStrazio e non ha ancora il link.
+3. **Incolla a mano** — sempre disponibile.
+
+Due regole che valgono per tutte e tre:
+
+- **Il collegamento non parte mai da solo.** Chiunque può condividere testo
+  verso l'app: il link viene messo nel campo e la conferma resta un gesto
+  dell'utente. Una cartella che si aggiunge da sé sarebbe difficile perfino da
+  spiegare a chi la vede comparire.
+- **Il link va pescato dal testo.** MEGA non condivide l'indirizzo nudo ma una
+  frase intorno, e passando per una chat può raccogliere punteggiatura. Se ne
+  occupa `LinkMega.cercaNelTesto`, coperta da test JVM.
+
 ### Ciclo di vita di una traccia
 
 Come si incastrano i tre pezzi, dall'inizio alla fine:
@@ -790,6 +810,7 @@ perché la BOM non le mostra): Firestore `26.5.0`, Auth `24.2.0`.
 | Riproduzione audio da MEGA | ✅ | **provata**: audio, seek dai commenti, pausa/riprendi |
 | Riproduzione tracce demo | 🟡 | restano sul timer finto: non hanno un file dietro |
 | Collegamento di una cartella MEGA | ✅ | **provato su una cartella vera**; ricollegare la stessa cartella la ricarica |
+| Condivisione da MEGA verso l'app | 🟡 | share sheet + tasto MEGA: **compila, da provare sul telefono** |
 | Durata delle tracce da MEGA | 🟡 | arriva al primo play di *quella* traccia; le altre restano `--:--` |
 | Nome della cartella letto da MEGA | ✅ | risolto provando tutti i nodi non-file, vedi errore 7 |
 | Waveform | 🟡 | equalizzatore animato decorativo, nessun dato reale |
@@ -973,7 +994,22 @@ quasi sempre un'incompatibilità di versione, non un errore nel codice. E la
 versione da guardare è quella che il log **scarica**, non quella che il
 catalogo dichiara.
 
-#### 11. Warning KSP sui source set Kotlin
+#### 11. Da Android 11 le altre app sono invisibili se non le dichiari
+
+*Sintomo (previsto, non ancora osservato):* il tasto MEGA apre il browser anche
+su un telefono che ha l'app MEGA installata.
+
+*Causa:* dalla 11, `getLaunchIntentForPackage` restituisce `null` per qualunque
+pacchetto non elencato in `<queries>` nel manifest. Non è un errore, non è un
+permesso negato: è la stessa risposta che si otterrebbe se l'app non ci fosse.
+
+*Da ricordare:* se un giorno MEGA cambiasse il nome del pacchetto, il sintomo
+sarebbe identico — e non ci sarebbe niente nei log a dirlo. Il ripiego sul
+browser fa sì che il caso peggiore resti utilizzabile invece che rotto, ma
+nasconde anche il problema: se il tasto apre il browser su un telefono che ha
+MEGA, si guarda `<queries>` prima di guardare il codice.
+
+#### 12. Warning KSP sui source set Kotlin
 
 *Fix applicato:* `android.disallowKotlinSourceSets=false` in `gradle.properties`.
 
