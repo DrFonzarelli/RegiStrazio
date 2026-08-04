@@ -690,10 +690,24 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         if (traccia.scaricata) {
+            // Se è proprio quella che sta suonando, il player ha il file
+            // aperto: cancellarlo e basta lo lasciava a leggere qualcosa che
+            // non c'era più, con un errore e l'ascolto perso. Si riparte da
+            // MEGA dallo stesso punto, così chi ascolta non se ne accorge.
+            val riproduzione = _state.value.riproduzione
+            val stavaSuonando = riproduzione.tracciaId == tracciaId && riproduzione.inRiproduzione
+            val punto = riproduzione.posizioneSecondi
+
             fileLocali.remove(tracciaId)
             salva { archivio.rimuoviDownload(tracciaId) }
             aggiornaTraccia(tracciaId) { it.copy(scaricata = false) }
-            mostra("Rimossa dal telefono — tornerà in streaming")
+
+            if (stavaSuonando) {
+                avvia(tracciaId, punto)
+                mostra("Rimossa dal telefono — proseguo in streaming")
+            } else {
+                mostra("Rimossa dal telefono — tornerà in streaming")
+            }
             return
         }
 

@@ -37,7 +37,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -156,17 +155,6 @@ fun TrackCard(
             .fillMaxWidth()
             .clip(Radius.cardLg)
             .background(colors.surface)
-            // Riempimento del download, dietro il contenuto: come `.bulk-dl-fill`
-            // del prototipo, che sta a z-index 0 sotto icona ed etichetta. Qui la
-            // percentuale è vera — byte scaricati sul totale.
-            .drawBehind {
-                scaricamento?.let { frazione ->
-                    drawRect(
-                        color = colors.accentSoft,
-                        size = androidx.compose.ui.geometry.Size(size.width * frazione, size.height)
-                    )
-                }
-            }
             .appBorder(
                 if (inRiproduzione || scaricamento != null) colors.accent else colors.border,
                 Radius.lg
@@ -237,6 +225,7 @@ fun TrackCard(
 
             TrackMenu(
                 traccia = traccia,
+                inDownload = scaricamento != null,
                 onCambiaDownload = azioni.onCambiaDownload,
                 onRinomina = { bozzaTitolo = traccia.titolo; inRinomina = true },
                 onDettagli = azioni.onApriDettagli
@@ -268,7 +257,17 @@ fun TrackCard(
             when {
                 // Mentre scarica il numero dice quanto manca; a fine corsa
                 // resta la sola icona, come `.dl-indicator` nel prototipo.
+                // Toccarla interrompe: è il posto dove viene da cercarlo,
+                // molto prima che nel menu.
                 scaricamento != null -> Row(
+                    Modifier
+                        .clip(Radius.pillShape)
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = azioni.onCambiaDownload
+                        )
+                        .padding(horizontal = 6.dp, vertical = 2.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
@@ -277,7 +276,7 @@ fun TrackCard(
                         color = colors.accent,
                         fontSize = 11.sp
                     )
-                    AppIcon(AppIcons.Cloud, 13.dp, colors.accent)
+                    AppIcon(AppIcons.X, 10.dp, colors.accent)
                 }
                 traccia.scaricata -> AppIcon(AppIcons.CloudDone, 13.dp, colors.accent)
             }

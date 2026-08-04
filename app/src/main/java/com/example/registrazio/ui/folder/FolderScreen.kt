@@ -61,6 +61,10 @@ fun FolderScreen(
                 ordinamento = ordinamento,
                 scaricate = scaricateSuTotali.first,
                 totali = scaricateSuTotali.second,
+                // Somma le frazioni dei download in corso: senza, la barra
+                // resterebbe ferma per tutta una traccia e poi salterebbe di
+                // colpo. È comunque una misura vera, solo più fine.
+                parzialeInCorso = scaricamenti.values.sum(),
                 inCorso = bulkInCorso,
                 onCambiaOrdinamento = onCambiaOrdinamento,
                 onScaricaTutte = onScaricaTutte
@@ -93,6 +97,7 @@ private fun SortBar(
     ordinamento: Ordinamento,
     scaricate: Int,
     totali: Int,
+    parzialeInCorso: Float,
     inCorso: Boolean,
     onCambiaOrdinamento: () -> Unit,
     onScaricaTutte: () -> Unit
@@ -102,7 +107,7 @@ private fun SortBar(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        BulkDownloadButton(scaricate, totali, inCorso, onScaricaTutte)
+        BulkDownloadButton(scaricate, totali, parzialeInCorso, inCorso, onScaricaTutte)
         SortToggle(ordinamento, onCambiaOrdinamento)
     }
 }
@@ -115,13 +120,16 @@ private fun SortBar(
 private fun BulkDownloadButton(
     scaricate: Int,
     totali: Int,
+    parzialeInCorso: Float,
     inCorso: Boolean,
     onClick: () -> Unit
 ) {
     val colors = AppTheme.colors
     val complete = totali > 0 && scaricate >= totali
     val evidenziato = inCorso || complete
-    val frazione = if (totali == 0) 0f else scaricate.toFloat() / totali
+    val frazione =
+        if (totali == 0) 0f
+        else ((scaricate + parzialeInCorso) / totali).coerceIn(0f, 1f)
 
     val etichetta = when {
         complete -> "Tutte scaricate"

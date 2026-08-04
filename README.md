@@ -118,9 +118,16 @@ Nel prototipo la barra che si riempie esiste **solo** sul tasto "Scarica tutte"
 prototipo `downloaded` era un booleano che si girava all'istante, non c'era
 niente da attendere.
 
-Ora che il download è reale e dura, lo stesso riempimento è stato portato
-**anche sulla card della traccia**, con la percentuale vera dei byte. Non è una
-cosa che stava nel prototipo: è una cosa che il prototipo non poteva avere.
+Ora che il download è reale e dura, la traccia singola mostra la **percentuale**
+accanto all'icona — un numero, non una barra. Provata anche la versione con il
+riempimento dietro la card, ed è stata tolta: su una card alta e piena di
+contenuto quel movimento distrae senza aggiungere niente che il numero non dica
+già. Il riempimento resta dov'era nel prototipo, sul tasto "Scarica tutte".
+
+Quella barra però non deve avanzare **a scatti di una traccia**: con download
+veri resterebbe ferma per decine di secondi e poi salterebbe. Somma anche la
+frazione dei download in corso, quindi scorre di continuo restando una misura
+vera.
 
 **Regola su questo genere di indicatori:** una barra che si riempie promette una
 misura. Va usata dove una misura c'è — byte su byte, file su file — e mai dove
@@ -1078,7 +1085,35 @@ Due dettagli che valgono la pena:
   possa buttare l'audio, che si riscarica. Al play si controlla che il file ci
   sia ancora, e se non c'è si torna in streaming senza dire niente a nessuno.
 
-#### 14. Warning KSP sui source set Kotlin
+#### 14. Un'azione senza un posto dove viverci non esiste
+
+*Sintomo:* il download si poteva annullare — toccando di nuovo la stessa voce di
+menu — ma nessuno poteva scoprirlo: la voce continuava a dire "Scarica in
+locale" anche mentre scaricava.
+
+*Da ricordare:* uno stato in più nel codice vuole quasi sempre uno stato in più
+nell'interfaccia. Il menu ora ha tre voci al posto di due (scarica / interrompi
+/ rimuovi), e la percentuale è diventata toccabile, perché è lì che uno cerca
+il modo di fermare la cosa che sta guardando.
+
+#### 15. Cancellare un file che il player sta leggendo
+
+*Sintomo:* "Rimuovi dal locale" durante l'ascolto lasciava la traccia andare
+ancora per un po', poi il player si perdeva e diceva di non trovare il file.
+Bisognava cambiare traccia e tornare indietro per farla ripartire.
+
+*Causa:* il file veniva cancellato mentre il player lo teneva aperto. Su Android
+il descrittore resta valido finché non si chiude — da qui l'audio che continua
+per un po' — ma alla prima lettura successiva non c'è più niente.
+
+*Fix:* se la traccia da cui si sta togliendo il file è proprio quella in
+ascolto, la riproduzione riparte da MEGA **dallo stesso punto**. Chi ascolta non
+se ne accorge.
+
+*Da ricordare:* prima di cancellare qualcosa, chiedersi chi altro lo sta
+usando in questo momento.
+
+#### 16. Warning KSP sui source set Kotlin
 
 *Fix applicato:* `android.disallowKotlinSourceSets=false` in `gradle.properties`.
 

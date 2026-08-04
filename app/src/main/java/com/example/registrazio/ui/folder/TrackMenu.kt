@@ -46,6 +46,7 @@ import com.example.registrazio.ui.theme.AppTheme
 @Composable
 fun TrackMenu(
     traccia: Traccia,
+    inDownload: Boolean,
     onCambiaDownload: () -> Unit,
     onRinomina: () -> Unit,
     onDettagli: () -> Unit,
@@ -86,7 +87,14 @@ fun TrackMenu(
                 ) {
                     MenuItem(
                         icona = if (traccia.scaricata) AppIcons.CloudDone else AppIcons.Cloud,
-                        etichetta = if (traccia.scaricata) "Rimuovi dal locale" else "Scarica in locale"
+                        etichetta = when {
+                            // Tre stati, non due: durante lo scaricamento
+                            // "Scarica in locale" sarebbe una bugia, e non
+                            // direbbe come fermarsi.
+                            inDownload -> "Interrompi scaricamento"
+                            traccia.scaricata -> "Rimuovi dal telefono"
+                            else -> "Scarica sul telefono"
+                        }
                     ) { aperto = false; onCambiaDownload() }
 
                     MenuItem(AppIcons.Edit, "Rinomina traccia") { aperto = false; onRinomina() }
