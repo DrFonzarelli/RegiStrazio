@@ -204,6 +204,29 @@ sincronizzazione non l'ha tolta anche dall'altra parte. Cancellarla e basta
 significherebbe vedersela ricomparire al giro dopo. Una riga mai caricata,
 invece, si cancella davvero — non c'è niente da dire a nessuno.
 
+**Il contatore conta documenti, non gesti.** Collegare una cartella da 5 tracce
+porta il conteggio a 6: un documento cartella più cinque documenti traccia.
+Mettere una stella su una di quelle tracce **non lo fa salire a 7**, perché quella
+traccia era già in attesa: quando la sincronizzazione partirà, caricherà lo
+stesso identico documento, solo con la stella dentro. Dieci ritocchi allo stesso
+commento restano un commento da caricare.
+
+È la cosa giusta da mostrare — è il lavoro che la sincronizzazione dovrà fare —
+ma va detta bene: la prima versione scriveva "7 modifiche", che si legge come un
+numero di gesti. Ora è spezzato per tipo ("1 cartella, 5 tracce, 1 commento"),
+che si spiega da sé.
+
+**Cosa resta fuori dall'archivio.** Le cartelle e le tracce di `DemoData` non
+entrano mai in Room: le prime hanno `linkMega` vuoto, le seconde `idFileMega`
+vuoto, e sono quei due campi a fare da criterio. Attenzione a leggerlo bene —
+il criterio è **"c'è un file MEGA dietro"**, non "l'ho collegata io". Una
+cartella collegata da un altro membro e arrivata via Firestore avrà il suo link
+e le sue tracce reali, quindi si salverà come qualsiasi altra.
+
+Seminare la demo in archivio "solo per provare" sarebbe una cattiva idea: quelle
+righe nascerebbero `LOCALE`, e alla prima sincronizzazione finirebbero su
+Firestore, cioè addosso a tutti e cinque, con tracce che non esistono.
+
 I commenti pending vivono in Room dal momento in cui vengono scritti fino al
 momento in cui il Sincronizza li carica su Firestore con successo. Dopo l'upload,
 il record Room viene eliminato — da quel momento il commento esiste solo su Firestore.

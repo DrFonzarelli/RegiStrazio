@@ -266,13 +266,24 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     /**
      * Per ora il tasto in topbar riporta solo cosa aspetta di essere caricato.
      * Diventerà il tasto Sincronizza quando ci sarà Firestore dall'altra parte.
+     *
+     * Il conteggio è di **documenti**, non di modifiche fatte: dieci ritocchi
+     * allo stesso commento restano un solo documento da caricare. Per questo va
+     * mostrato spezzato per tipo — "7 modifiche" faceva pensare a un numero di
+     * gesti, che non è quello che verrà caricato.
      */
     fun aggiorna() {
         val p = _state.value.pendenti
-        mostra(
-            if (!p.ceNeSono) "Tutto sincronizzato"
-            else "Da caricare: ${p.totale} " + if (p.totale == 1) "modifica" else "modifiche"
-        )
+        if (!p.ceNeSono) {
+            mostra("Tutto sincronizzato")
+            return
+        }
+        val pezzi = buildList {
+            if (p.cartelle > 0) add("${p.cartelle} " + if (p.cartelle == 1) "cartella" else "cartelle")
+            if (p.tracce > 0) add("${p.tracce} " + if (p.tracce == 1) "traccia" else "tracce")
+            if (p.commenti > 0) add("${p.commenti} " + if (p.commenti == 1) "commento" else "commenti")
+        }
+        mostra("Da sincronizzare: " + pezzi.joinToString(", "))
     }
 
     // ---------- riproduzione ----------
