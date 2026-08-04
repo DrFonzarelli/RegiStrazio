@@ -1,0 +1,2818 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, interactive-widget=resizes-content">
+<title>Prove — prototipo</title>
+<style>
+  :root{
+    --bg:#F5F1EA;
+    --surface:#FFFFFF;
+    --surface-alt:#EFEAE0;
+    --border:#E1DACB;
+    --border-strong:#CFC5AF;
+    --text:#231C13;
+    --text-secondary:#6B5F4C;
+    --text-muted:#A2977E;
+    --accent:#3C6E64;
+    --accent-soft:#E4EEEB;
+    --accent-ring:rgba(60,110,100,0.22);
+    --danger:#B0472E;
+    --topbar-bg:rgba(245,241,234,0.92);
+    --miniplayer-bg:rgba(255,255,255,0.94);
+    --radius-lg:16px;
+    --radius-md:12px;
+    --radius-sm:10px;
+    --avatar-a:#6B4FA0;
+    --avatar-m:#B5842B;
+    --avatar-l:#B5502B;
+    --avatar-t:#35618C;
+    --star:#C99A2E;
+    --palette-a:#6B4FA0;
+    --palette-m:#9A6E22;
+    --palette-l:#B5502B;
+    --palette-t:#35618C;
+    --palette-g:#4B7B4E;
+    --palette-r:#B5466F;
+    --palette-o:#2A7A8C;
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  html[data-theme="dark"]{
+    --bg:#161310;
+    --surface:#1F1B16;
+    --surface-alt:#262019;
+    --border:#332B21;
+    --border-strong:#453A2C;
+    --text:#F3EDE1;
+    --text-secondary:#C2B79F;
+    --text-muted:#8A7F68;
+    --accent:#6FA99B;
+    --accent-soft:#22332E;
+    --accent-ring:rgba(111,169,155,0.28);
+    --danger:#E17857;
+    --topbar-bg:rgba(22,19,16,0.9);
+    --miniplayer-bg:rgba(31,27,22,0.92);
+    --avatar-a:#9C87CF;
+    --avatar-m:#D4A853;
+    --avatar-l:#D4805A;
+    --avatar-t:#6FA0C7;
+    --star:#E0B84A;
+    --palette-a:#9C87CF;
+    --palette-m:#C49040;
+    --palette-l:#D4805A;
+    --palette-t:#6FA0C7;
+    --palette-g:#7FB77E;
+    --palette-r:#D47FA0;
+    --palette-o:#4FB8CE;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{margin:0; padding:0; height:100%; background:var(--bg);}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    color:var(--text);
+    -webkit-font-smoothing:antialiased;
+    overscroll-behavior-y:none;
+    transition:background .2s, color .2s;
+  }
+  button{
+    font-family:inherit;
+    font-size:14px;
+    color:var(--text);
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:var(--radius-sm);
+    padding:8px 12px;
+    cursor:pointer;
+    -webkit-user-select:none;
+    user-select:none;
+  }
+  button:active{ transform:scale(0.97); }
+  button.icon-btn{
+    display:flex; align-items:center; justify-content:center;
+    width:40px; height:40px; padding:0; border-radius:50%;
+    border:none; background:transparent; color:var(--text-secondary);
+  }
+  button.icon-btn:active{ background:var(--surface-alt); }
+  button.icon-btn.is-active{ color:var(--star); background:var(--accent-soft); }
+  input,textarea{
+    font-family:inherit;
+    font-size:14px;
+    border:1px solid var(--border-strong);
+    border-radius:8px;
+    padding:6px 9px;
+    background:var(--surface);
+    color:var(--text);
+  }
+  textarea{ width:100%; min-height:56px; resize:none; }
+  input:focus,textarea:focus,button:focus-visible{
+    outline:2px solid var(--accent); outline-offset:1px;
+  }
+  h1,h2,h3,p{ margin:0; }
+  .app{ max-width:480px; margin:0 auto; min-height:100%; display:flex; flex-direction:column; }
+
+  header.topbar{
+    position:sticky; top:0; z-index:20;
+    background:var(--topbar-bg);
+    backdrop-filter:blur(10px);
+    -webkit-backdrop-filter:blur(10px);
+    padding:calc(var(--safe-top) + 8px) 8px 8px 12px;
+    display:flex; align-items:center; gap:2px;
+    border-bottom:1px solid var(--border);
+  }
+  header.topbar h1{ font-size:16px; font-weight:600; flex:1; letter-spacing:-0.01em; }
+  .badge-proto{
+    font-size:9px; text-transform:uppercase; letter-spacing:0.05em;
+    color:var(--text-muted); background:var(--surface-alt);
+    border:1px solid var(--border); border-radius:20px; padding:2px 7px;
+    margin-left:6px;
+  }
+
+  main{ flex:1; padding:11px 11px calc(86px + var(--safe-bottom)); }
+  main[hidden]{ display:none; }
+  [hidden]{ display:none !important; }
+
+  .sort-bar{ display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:10px; }
+
+  .sort-toggle{
+    display:flex; align-items:center; gap:6px; padding:6px 10px; flex-shrink:0;
+    background:var(--surface); border:1px solid var(--border-strong); border-radius:20px;
+  }
+  .sort-icon{ display:flex; align-items:center; color:var(--text-muted); transition:color .15s; }
+  .sort-icon svg{ width:13px; height:13px; }
+  .sort-icon.is-active{ color:var(--accent); }
+
+  .bulk-dl-btn{
+    position:relative; display:flex; align-items:center; gap:6px; padding:6px 12px;
+    font-size:12px; color:var(--text-secondary); overflow:hidden;
+    background:var(--surface); border:1px solid var(--border-strong); border-radius:20px;
+    width:148px; box-sizing:border-box; flex-shrink:0;
+  }
+  .bulk-dl-icon, .bulk-dl-label{ position:relative; z-index:1; }
+  .bulk-dl-icon{ display:flex; align-items:center; flex-shrink:0; }
+  .bulk-dl-icon svg{ width:14px; height:14px; }
+  .bulk-dl-label{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .bulk-dl-fill{
+    position:absolute; top:0; left:0; bottom:0; width:0%; z-index:0;
+    background:var(--accent-soft); transition:width .35s linear;
+  }
+  .bulk-dl-btn.is-downloading{ color:var(--accent); border-color:var(--accent); }
+  .bulk-dl-btn.is-complete{ color:var(--accent); border-color:var(--accent); }
+
+  .folder-card{
+    display:flex; align-items:center; gap:11px;
+    background:var(--surface); border:1px solid var(--border);
+    border-radius:var(--radius-md); padding:10px 12px; margin-bottom:6px;
+    cursor:pointer; text-align:left; width:100%;
+  }
+  .folder-icon{
+    width:38px; height:38px; border-radius:10px; flex-shrink:0;
+    background:var(--accent-soft); color:var(--accent);
+    display:flex; align-items:center; justify-content:center;
+  }
+  .folder-meta{ flex:1; min-width:0; }
+  .folder-meta .name{ font-size:14.5px; font-weight:600; }
+  .folder-meta .sub{ font-size:12px; color:var(--text-muted); margin-top:1px; }
+
+  .track-card{
+    background:var(--surface); border:1px solid var(--border);
+    border-radius:var(--radius-lg); padding:10px 12px; margin-bottom:8px;
+    transition:border-color .15s;
+  }
+  .track-card.is-playing{ border-color:var(--accent); }
+  .track-head{ display:flex; align-items:center; gap:5px; margin-bottom:7px; }
+  .track-title{ font-size:14.5px; font-weight:600; min-width:0; flex:1; }
+  .title-line{ display:flex; align-items:center; gap:5px; min-width:0; }
+  .track-title .title-text{
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0;
+    user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; touch-action:manipulation;
+  }
+  .rename-confirm{
+    display:flex; align-items:center; justify-content:center;
+    width:22px; height:22px; flex-shrink:0; padding:0; margin-left:2px;
+    color:var(--text-secondary); cursor:pointer; border-radius:50%;
+    border:none; background:var(--surface-alt);
+  }
+  .track-title .dur{
+    display:flex; align-items:center; gap:7px; height:14px;
+    font-weight:400; font-size:11.5px; color:var(--text-muted); margin-top:2px;
+  }
+  .fav-btn{
+    all:unset; display:flex; align-items:center; gap:3px; cursor:pointer;
+    color:var(--text-muted); flex-shrink:0; padding:0 4px 0 2px; border-radius:10px; height:100%;
+  }
+  .fav-btn:active{ background:var(--surface-alt); }
+  .fav-btn.is-active{ color:var(--star); }
+  .fav-btn .fav-count{ font-size:11px; line-height:1; font-variant-numeric:tabular-nums; }
+  .title-edit-input{
+    font-size:14.5px; font-weight:600; width:100%; padding:1px 4px;
+    border:1px solid var(--border-strong); border-radius:6px; background:var(--surface); color:var(--text);
+  }
+  .title-edit-input:focus{ outline:none; border-color:var(--border-strong); }
+  .play-btn{
+    width:38px; height:38px; border-radius:50%; flex-shrink:0;
+    display:flex; align-items:center; justify-content:center;
+    border:1px solid var(--border-strong); background:var(--surface);
+    transition:background .15s, border-color .15s;
+  }
+  .track-card.is-playing .play-btn{ background:var(--accent); border-color:var(--accent); color:#fff; }
+  .chip-btn{
+    display:flex; align-items:center; gap:4px; height:38px; padding:0 12px; box-sizing:border-box;
+    font-size:12px; color:var(--text-secondary);
+    background:var(--surface); border:1px solid var(--border-strong); border-radius:20px; flex-shrink:0;
+    transition:background .15s, color .15s, border-color .15s;
+  }
+  .chip-btn.is-active{ background:var(--accent-soft); color:var(--accent); border-color:var(--accent); }
+  .add-btn{
+    width:38px; height:38px; padding:0; border-radius:50%; flex-shrink:0;
+    display:flex; align-items:center; justify-content:center;
+    border:1px solid var(--border-strong); background:var(--surface); color:var(--text-secondary);
+    transition:background .15s, color .15s, border-color .15s;
+  }
+  .add-btn.is-active{ background:var(--accent-soft); color:var(--accent); border-color:var(--accent); }
+  .add-btn svg{ width:18px; height:18px; }
+  .add-btn.is-active svg{ width:12px; height:12px; }
+  .more-wrap{ position:relative; display:flex; flex-shrink:0; }
+  .more-btn{
+    width:22px; height:34px; padding:0; flex-shrink:0;
+    display:flex; align-items:center; justify-content:center;
+    border:none; background:transparent; color:var(--text-muted);
+  }
+  .more-btn:active{ color:var(--text-secondary); }
+  .more-btn svg{ width:16px; height:16px; }
+  .track-dropdown{
+    display:none; position:absolute; top:100%; right:0; margin-top:5px; z-index:15;
+    background:var(--surface); border:1px solid var(--border); border-radius:11px;
+    box-shadow:0 6px 20px rgba(0,0,0,0.16); min-width:190px; padding:4px; box-sizing:border-box;
+  }
+  .track-dropdown.is-open{ display:block; }
+  .track-dropdown button{
+    all:unset; display:flex; align-items:center; gap:10px; width:100%; box-sizing:border-box;
+    padding:9px 10px; font-size:13.5px; color:var(--text); border-radius:7px; cursor:pointer;
+  }
+  .track-dropdown button:active{ background:var(--surface-alt); }
+  .track-dropdown button svg{ flex-shrink:0; color:var(--text-secondary); width:17px; height:17px; }
+
+  /* timeline: rail + marker + playhead + equalizzatore di sfondo, altezza fissa sempre */
+  .track-line{ position:relative; height:26px; margin-bottom:2px; touch-action:pan-y; }
+  .eq-bg{
+    position:absolute; inset:0; display:flex; align-items:center; gap:1px;
+    padding:0 1px; z-index:0; pointer-events:none;
+    opacity:0.14; transition:opacity .2s;
+  }
+  .eq-bg.is-active{ opacity:0.3; }
+  .eq-bg .bar{ flex:1; background:var(--border-strong); border-radius:1px; height:3px; transition:height .14s ease; }
+  .track-line .rail{ position:absolute; top:12px; left:0; right:0; height:2px; background:var(--border-strong); border-radius:2px; z-index:1; }
+  .marker{
+    all:unset; cursor:pointer; position:absolute; top:4px; width:17px; height:17px; z-index:2;
+    display:flex; align-items:center; justify-content:center;
+    border-radius:50%; color:#fff; font-weight:700; font-size:9px;
+    transform:translateX(-50%);
+    transition:box-shadow .15s;
+  }
+  .marker:active{ transform:translateX(-50%) scale(0.92); }
+  @keyframes markerEnter{ from{ transform:translateX(-50%) scale(0.2); opacity:0; } to{ transform:translateX(-50%) scale(1); opacity:1; } }
+  .marker.is-new{ animation:markerEnter .28s cubic-bezier(.34,1.56,.64,1); }
+  .playhead{
+    position:absolute; top:0; width:23px; height:26px; z-index:3;
+    display:flex; align-items:center; justify-content:center;
+    background:transparent; border:none; padding:0;
+    cursor:grab; transform:translateX(-50%); touch-action:none;
+  }
+  .playhead::before{
+    content:''; width:9.5px; height:9.5px; border-radius:50%;
+    background:#fff; border:2.2px solid var(--accent);
+    box-shadow:0 1px 3px rgba(0,0,0,0.25);
+    transition:transform .12s ease, box-shadow .12s ease;
+  }
+  .playhead.is-dragging{ cursor:grabbing; }
+  .playhead.is-dragging::before{
+    transform:scale(1.4);
+    box-shadow:0 0 0 6px var(--accent-ring), 0 2px 6px rgba(0,0,0,0.3);
+  }
+  .time-label{ margin:0; font-size:11px; color:var(--text-muted); }
+  .time-row-line{ display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; }
+  .dl-indicator{ display:none; align-items:center; color:var(--accent); }
+  .dl-indicator.is-shown{ display:flex; }
+  .dl-indicator svg{ width:13px; height:13px; }
+
+  .preview-box{
+    display:none; margin:2px 0 7px; background:var(--surface-alt);
+    border-radius:var(--radius-sm); padding:7px 6px;
+    align-items:flex-start; gap:2px; overflow:hidden;
+  }
+  .preview-box .nav-btn{ width:32px; height:32px; padding:0; flex-shrink:0; border:none; background:transparent; color:var(--text-muted); }
+  .preview-body{ flex:1; min-width:0; padding-top:2px; }
+  .preview-chip{
+    all:unset; cursor:pointer; display:flex; align-items:center; gap:4px;
+    font-weight:600; color:var(--accent); font-size:11px;
+    padding:2px 0; min-width:0; width:100%; margin-bottom:3px;
+  }
+  .preview-chip-name{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; color:var(--text-secondary); font-weight:500; }
+  .preview-chip-time{
+    flex-shrink:0; color:var(--accent); font-weight:600;
+    display:inline-flex; align-items:center; gap:3px;
+  }
+  .preview-chip-time .chip-time-text{ text-decoration:underline; text-underline-offset:2px; text-decoration-thickness:1.3px; }
+  .preview-chip-time svg{ flex-shrink:0; opacity:0.9; }
+  .preview-chip .dot{ width:5px; height:5px; border-radius:50%; flex-shrink:0; }
+
+  .preview-text{
+    margin:0; font-size:13px; line-height:1.45; color:var(--text);
+    cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    height:19px; transition:height .2s ease;
+  }
+  .preview-text.is-expanded{
+    white-space:normal; height:5em; overflow-y:auto; -webkit-overflow-scrolling:touch;
+    scrollbar-width:thin; scrollbar-color:var(--border-strong) transparent;
+  }
+  .preview-text.is-expanded::-webkit-scrollbar{ width:2px; }
+  .preview-text.is-expanded::-webkit-scrollbar-track{ background:transparent; }
+  .preview-text.is-expanded::-webkit-scrollbar-thumb{ background:var(--border-strong); border-radius:2px; }
+  .preview-text.is-expanded::-webkit-scrollbar-button{ display:none; width:0; height:0; }
+
+  .add-box{
+    display:none; margin:2px 0 7px; background:var(--surface-alt);
+    border-radius:var(--radius-sm); padding:9px; flex-direction:column; gap:7px; overflow:hidden;
+  }
+  .add-box .time-row{ display:flex; align-items:center; gap:7px; flex-shrink:0; }
+  .add-box .time-row input{ width:58px; text-align:center; }
+  .add-box .time-row input[readonly]{ background:var(--surface-alt); color:var(--text-muted); }
+  .time-lock-btn{
+    display:none; align-items:center; justify-content:center;
+    width:26px; height:26px; padding:0; border-radius:50%; flex-shrink:0;
+    border:1px solid var(--border-strong); background:var(--surface); color:var(--text-muted);
+  }
+  .time-lock-btn.is-shown{ display:flex; }
+  .time-lock-btn.is-unlocked{ background:var(--accent-soft); color:var(--accent); border-color:var(--accent); }
+  .add-box .actions{ display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; }
+  .add-box-buttons{ display:flex; align-items:center; gap:8px; flex-shrink:0; margin-left:auto; }
+  .btn-primary{ background:var(--accent); color:#fff; border:none; }
+
+  .all-comments{ display:none; flex-direction:column; gap:5px; overflow:hidden; }
+  .comment-row{
+    display:flex; align-items:center; gap:6px;
+    background:var(--surface-alt); border-radius:var(--radius-sm); padding:5px 6px 5px 7px;
+  }
+  .comment-row.is-selected{ background:var(--accent-soft); border:1px solid var(--accent); }
+  .comment-chip{ all:unset; cursor:pointer; display:flex; align-items:center; gap:6px; flex-shrink:0; padding:4px 2px; }
+  .avatar{
+    width:21px; height:21px; border-radius:50%; flex-shrink:0;
+    display:flex; align-items:center; justify-content:center;
+    font-size:9.5px; color:#fff; font-weight:700;
+  }
+  .comment-time{
+    font-size:11px; color:var(--text-muted);
+    display:inline-flex; align-items:center; gap:3px;
+  }
+  .comment-time .chip-time-text{ text-decoration:underline; text-underline-offset:2px; text-decoration-thickness:1.3px; }
+  .comment-time svg{ flex-shrink:0; opacity:0.85; }
+  .comment-row.is-selected .comment-time{ color:var(--accent); }
+  .comment-text{
+    flex:1; font-size:12.5px; min-width:0; cursor:pointer;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--text);
+  }
+  .comment-actions{ display:flex; align-items:center; gap:2px; flex-shrink:0; }
+  .comment-action-btn{
+    all:unset; cursor:pointer; flex-shrink:0; padding:8px; display:flex;
+  }
+  .comment-edit{ color:var(--text-muted); }
+  .comment-del{ color:var(--danger); }
+  .empty-comments{ font-size:12px; color:var(--text-muted); padding:5px 2px; }
+
+  #mini-player{
+    display:none; position:fixed; left:0; right:0; bottom:0; z-index:30;
+    background:var(--miniplayer-bg); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
+    border-top:1px solid var(--border);
+    padding:9px 14px calc(9px + var(--safe-bottom));
+  }
+  #mini-player .inner{ max-width:480px; margin:0 auto; display:flex; align-items:center; gap:10px; }
+  #mini-player .mini-eq{ display:flex; align-items:center; gap:2px; width:24px; height:16px; flex-shrink:0; }
+  #mini-player .mini-eq div{ flex:1; background:var(--accent); border-radius:1px; height:5px; transition:height .12s ease; }
+  #mini-player .mini-title{ flex:1; min-width:0; font-size:13px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; cursor:pointer; }
+  #mini-player .mini-title:active{ opacity:0.65; }
+  #mini-player .mini-sub{ font-size:11px; color:var(--text-muted); font-weight:400; display:block; }
+  #mini-player button.icon-btn{ background:var(--accent-soft); color:var(--accent); width:38px; height:38px; flex-shrink:0; }
+  #mini-play-btn{ background:var(--accent-soft); color:var(--accent); }
+  #mini-play-btn svg{ width:15px; height:15px; }
+  #lockscreen-trigger{
+    display:block; width:100%; max-width:480px; margin:6px auto 0; text-align:center;
+    background:none; border:none; color:var(--text-muted); font-size:11px; padding:2px; text-decoration:underline;
+  }
+
+  #toast{
+    position:fixed; left:50%; bottom:20px; transform:translateX(-50%) translateY(10px);
+    background:var(--text); color:var(--bg); font-size:12.5px; padding:9px 16px;
+    border-radius:20px; z-index:50; opacity:0; pointer-events:none; transition:opacity .2s, transform .2s;
+    white-space:nowrap;
+  }
+  #toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
+
+  #confirm-overlay{
+    display:none; position:fixed; inset:0; z-index:60;
+    background:rgba(0,0,0,0.4); align-items:flex-end; justify-content:center;
+  }
+  #confirm-overlay.show{ display:flex; }
+  #confirm-sheet{
+    width:100%; max-width:480px; background:var(--surface);
+    border-radius:20px 20px 0 0; padding:20px 18px calc(18px + var(--safe-bottom));
+  }
+  #confirm-sheet p{ font-size:14px; color:var(--text-secondary); margin-bottom:16px; line-height:1.4; }
+  #confirm-sheet h3{ font-size:15.5px; font-weight:600; margin-bottom:6px; }
+  #confirm-sheet .actions{ display:flex; gap:10px; }
+  #confirm-sheet .actions button{ flex:1; padding:11px; font-size:14px; }
+  #confirm-sheet .btn-danger{ background:var(--danger); color:#fff; border:none; }
+
+  #bulk-download-overlay{
+    display:none; position:fixed; inset:0; z-index:60;
+    background:rgba(0,0,0,0.4); align-items:flex-end; justify-content:center;
+  }
+  #bulk-download-overlay.show{ display:flex; }
+  #bulk-download-sheet{
+    width:100%; max-width:480px; background:var(--surface);
+    border-radius:20px 20px 0 0; padding:20px 18px calc(18px + var(--safe-bottom));
+  }
+  #bulk-download-sheet h3{ font-size:15.5px; font-weight:600; margin-bottom:6px; }
+  #bulk-download-sheet p{ font-size:14px; color:var(--text-secondary); margin-bottom:16px; line-height:1.4; }
+  #bulk-download-sheet .actions{ display:flex; gap:10px; }
+  #bulk-download-sheet .actions button{ flex:1; padding:11px; font-size:14px; }
+
+  #track-details-overlay{
+    display:none; position:fixed; inset:0; z-index:60;
+    background:rgba(0,0,0,0.4); align-items:flex-end; justify-content:center;
+  }
+  #track-details-overlay.show{ display:flex; }
+  #track-details-sheet{
+    width:100%; max-width:480px; background:var(--surface);
+    border-radius:20px 20px 0 0; padding:20px 18px calc(18px + var(--safe-bottom));
+    box-sizing:border-box;
+  }
+  #track-details-sheet h3{ font-size:15.5px; font-weight:600; margin-bottom:14px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .td-stats{ display:flex; gap:10px; margin-bottom:18px; }
+  .td-stat{
+    flex:1; display:flex; flex-direction:column; align-items:center; gap:2px;
+    background:var(--surface-alt); border-radius:12px; padding:10px 6px;
+  }
+  .td-stat-value{ font-size:17px; font-weight:700; color:var(--text); font-variant-numeric:tabular-nums; }
+  .td-stat-label{ font-size:10.5px; color:var(--text-muted); }
+  .td-chart-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; }
+  .td-section-label{ font-size:12px; font-weight:600; color:var(--text-secondary); margin-bottom:0; }
+  #td-play-btn{
+    width:28px; height:28px; border-radius:50%; flex-shrink:0;
+    border:1px solid var(--border-strong); background:var(--surface); color:var(--text-secondary);
+  }
+  #td-play-btn svg{ width:12px; height:12px; }
+  #td-play-btn.is-playing{ background:var(--accent); border-color:var(--accent); color:#fff; }
+  #td-chart{ cursor:pointer; }
+  #td-chart{ width:100%; height:52px; margin-bottom:6px; }
+  #td-chart svg{ width:100%; height:100%; display:block; }
+  .td-hint{ font-size:11px; color:var(--text-muted); margin-bottom:16px; line-height:1.4; }
+  #track-details-close{ width:100%; padding:11px; font-size:14px; }
+
+  #lockscreen-overlay{
+    display:none; position:fixed; inset:0; z-index:80;
+    background:linear-gradient(160deg, #1c2b3a, #0c1420);
+    flex-direction:column; align-items:center; justify-content:flex-end;
+    padding:0 0 calc(22px + var(--safe-bottom));
+  }
+  #lockscreen-overlay.show{ display:flex; }
+  #lockscreen-clock{ color:#fff; text-align:center; margin-bottom:auto; margin-top:14vh; }
+  #lockscreen-time{ font-size:64px; font-weight:300; line-height:1; }
+  #lockscreen-date{ font-size:14px; opacity:0.75; margin-top:6px; text-transform:capitalize; }
+  #lockscreen-notification{
+    width:calc(100% - 32px); max-width:440px; background:rgba(255,255,255,0.14);
+    backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px);
+    border-radius:20px; padding:12px 14px; box-sizing:border-box; margin-bottom:14px;
+    border:1px solid rgba(255,255,255,0.18);
+  }
+  .ln-top{ display:flex; align-items:center; gap:6px; margin-bottom:8px; }
+  .ln-app-icon{ width:16px; height:16px; border-radius:5px; background:var(--accent); flex-shrink:0; }
+  .ln-app-name{ font-size:11px; font-weight:600; color:rgba(255,255,255,0.85); flex:1; }
+  .ln-app-time{ font-size:11px; color:rgba(255,255,255,0.55); }
+  .ln-body{ display:flex; align-items:center; gap:8px; margin-bottom:8px; }
+  .ln-eq{ display:flex; align-items:center; gap:2px; width:20px; height:14px; flex-shrink:0; }
+  .ln-eq div{ flex:1; background:#fff; border-radius:1px; height:4px; opacity:0.85; transition:height .12s ease; }
+  .ln-title-wrap{
+    all:unset; display:block; flex:1; min-width:0; cursor:pointer; text-align:left;
+  }
+  .ln-title-wrap:active{ opacity:0.7; }
+  .ln-title{ display:block; color:#fff; font-size:14px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .ln-time{ display:block; color:rgba(255,255,255,0.6); font-size:11px; font-variant-numeric:tabular-nums; margin-top:1px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  #ln-play-btn, #ln-comment-btn{ background:rgba(255,255,255,0.18); color:#fff; width:38px; height:38px; padding:0; flex-shrink:0; }
+  #ln-play-btn svg{ width:15px; height:15px; }
+  #ln-comment-btn.is-active{ background:var(--accent); }
+  #ln-reply-row{ display:none; align-items:center; gap:8px; margin-top:8px; }
+  #ln-reply-time{ font-size:11px; color:rgba(255,255,255,0.6); flex-shrink:0; font-variant-numeric:tabular-nums; }
+  #ln-reply-row.is-open{ display:flex; }
+  #ln-reply-row input{
+    flex:1; background:rgba(255,255,255,0.14); border:none; color:#fff; padding:9px 12px;
+    border-radius:10px; font-size:13px;
+  }
+  #ln-reply-row input::placeholder{ color:rgba(255,255,255,0.5); }
+  #ln-reply-send{
+    width:32px; height:32px; padding:0; border-radius:50%; flex-shrink:0;
+    display:flex; align-items:center; justify-content:center;
+    background:var(--accent); color:#fff; border:none;
+  }
+  #lockscreen-close{
+    background:none; border:none; color:rgba(255,255,255,0.6); font-size:12.5px;
+    text-decoration:underline; padding:6px;
+  }
+
+  .refresh-spin{ animation:spin .5s linear; }
+  @keyframes spin{ from{transform:rotate(0)} to{transform:rotate(360deg)} }
+
+  @media (prefers-reduced-motion:reduce){
+    .refresh-spin{ animation:none; }
+    *{ transition:none !important; }
+  }
+
+  /* ---------- avatar button (topbar) ---------- */
+  .avatar-btn{
+    width:40px; height:40px; border-radius:50%; border:none; padding:0;
+    display:flex; align-items:center; justify-content:center;
+    background:transparent; flex-shrink:0; cursor:pointer;
+  }
+  .avatar-btn:active{ background:var(--surface-alt); }
+  .account-dot{
+    width:26px; height:26px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+    font-size:11px; font-weight:700; color:#fff;
+  }
+
+  /* ---------- gate (login senza password) ---------- */
+  .gate-wrap{ padding-top:8px; }
+  .gate-title{ font-size:20px; font-weight:700; margin:0 0 2px; }
+  .gate-sub{ font-size:13.5px; color:var(--text-secondary); margin:0 0 18px; }
+  .gate-option{
+    background:var(--surface); border:1px solid var(--border);
+    border-radius:var(--radius-md); margin-bottom:6px; overflow:hidden;
+  }
+  .gate-option-head{
+    all:unset; width:100%; box-sizing:border-box; padding:12px 12px;
+    display:flex; align-items:center; justify-content:space-between; gap:8px;
+    font-size:14.5px; font-weight:600; color:var(--text); cursor:pointer;
+  }
+  .gate-option-head .chev{ color:var(--text-muted); display:flex; transition:transform .22s ease; flex-shrink:0; }
+  .gate-option.expanded .gate-option-head .chev{ transform:rotate(90deg); }
+  .gate-option-body{ display:grid; grid-template-rows:0fr; transition:grid-template-rows .26s ease; }
+  .gate-option.expanded .gate-option-body{ grid-template-rows:1fr; }
+  .gate-option-inner{ overflow:hidden; min-height:0; }
+  .gate-option-content{ padding:0 12px 14px; }
+  .gate-option-content input{ width:100%; box-sizing:border-box; }
+  .palette-label{ font-size:12px; color:var(--text-muted); margin:12px 0 8px; }
+  .palette{ display:flex; gap:9px; flex-wrap:wrap; margin-bottom:4px; }
+  .swatch{
+    all:unset; box-sizing:border-box; width:30px; height:30px; border-radius:50%;
+    border:2px solid transparent; display:flex; align-items:center; justify-content:center;
+    color:#fff; cursor:pointer;
+  }
+  .swatch.selected{ border-color:var(--text); box-shadow:0 0 0 2px var(--surface); }
+  .field-error{ color:var(--danger); font-size:12.5px; margin:8px 0 0; line-height:1.4; }
+  .gate-action-row{ display:flex; justify-content:flex-end; margin-top:14px; }
+  .gate-action-btn{
+    all:unset; box-sizing:border-box; display:inline-flex; align-items:center; gap:5px;
+    padding:8px 18px; border-radius:20px; background:var(--accent); color:#fff;
+    font-size:13.5px; font-weight:600; cursor:pointer; letter-spacing:-0.01em;
+  }
+  .gate-action-btn:active{ opacity:0.82; transform:scale(0.97); }
+  /* recover: lista + pannello conferma */
+  .recover-confirm{
+    background:var(--surface-alt); border-radius:var(--radius-md);
+    padding:14px 12px 12px; margin-top:4px;
+  }
+  .recover-confirm-header{ display:flex; align-items:center; gap:10px; margin-bottom:12px; }
+  .recover-confirm-avatar{
+    width:34px; height:34px; border-radius:50%; color:#fff; flex-shrink:0;
+    display:flex; align-items:center; justify-content:center; font-size:14px; font-weight:700;
+  }
+  .recover-confirm-name{ font-size:15px; font-weight:600; }
+  .recover-stats{ display:flex; gap:8px; margin-bottom:14px; }
+  .recover-stat{
+    flex:1; background:var(--surface); border-radius:10px; padding:8px 6px;
+    display:flex; flex-direction:column; align-items:center; gap:2px;
+  }
+  .recover-stat-val{ font-size:16px; font-weight:700; color:var(--text); }
+  .recover-stat-lbl{ font-size:10px; color:var(--text-muted); text-align:center; }
+  .recover-confirm-actions{ display:flex; align-items:center; justify-content:space-between; }
+  .recover-back-btn{
+    all:unset; font-size:13px; color:var(--text-muted); cursor:pointer; padding:4px 0;
+    display:flex; align-items:center; gap:4px;
+  }
+  .recover-back-btn:active{ opacity:0.7; }
+  .recover-item{
+    all:unset; box-sizing:border-box; width:100%; display:flex; align-items:center; gap:10px;
+    padding:9px 6px; border-radius:var(--radius-sm); font-size:14.5px; color:var(--text); cursor:pointer;
+  }
+  .recover-item:active{ background:transparent; }
+  .recover-dot{
+    width:22px; height:22px; border-radius:50%; flex-shrink:0;
+    color:#fff; display:flex; align-items:center; justify-content:center;
+    font-size:10.5px; font-weight:700;
+  }
+  .recover-empty{ font-size:13px; color:var(--text-muted); padding:6px; }
+
+  /* ---------- ghost card (collega cartella Mega) ---------- */
+  .ghost-card{ flex-direction:column; align-items:stretch; padding:0; border-style:dashed; cursor:default; min-height:0; }
+  .ghost-head{
+    all:unset; box-sizing:border-box; width:100%; padding:10px 12px;
+    display:flex; align-items:center; gap:11px; color:var(--text-secondary); cursor:pointer;
+  }
+  .ghost-head:active{ opacity:0.7; }
+  .ghost-chev{ color:var(--text-muted); display:flex; margin-left:auto; flex-shrink:0; }
+  .ghost-icon{
+    width:38px; height:38px; border-radius:10px;
+    background:var(--surface-alt); color:var(--text-muted);
+    display:flex; align-items:center; justify-content:center; flex-shrink:0;
+  }
+  .ghost-meta{ display:flex; flex-direction:column; gap:1px; }
+  .ghost-label{ font-size:14.5px; font-weight:600; color:var(--text-secondary); }
+  .ghost-sublabel{ font-size:12px; color:var(--text-muted); }
+  .ghost-body{ display:none; overflow:hidden; flex-direction:column; }
+  .ghost-body-inner{ min-height:0; width:100%; }
+  .ghost-body-content{ padding:0 12px 14px; }
+  .ghost-input-row{ display:flex; align-items:center; gap:8px; margin-top:4px; }
+  .ghost-input-row input{ flex:1; min-width:0; }
+  .ghost-icon-btn{
+    width:32px; height:32px; padding:0; border-radius:50%; flex-shrink:0;
+    border:1px solid var(--border-strong); background:var(--surface-alt);
+    color:var(--text-secondary); display:flex; align-items:center; justify-content:center;
+  }
+  .ghost-icon-btn:active{ opacity:0.7; transform:scale(0.93); }
+  .ghost-icon-btn.ghost-confirm{ background:var(--accent); border-color:var(--accent); color:#fff; }
+
+  /* card cartella Mega (aggiunta manualmente) */
+  .mega-folder-card{ cursor:pointer; }
+  .mega-folder-card:active{ transform:scale(0.97); }
+  .mega-folder-name-wrap{ display:flex; align-items:center; gap:4px; flex:1; min-width:0; }
+  .mega-folder-name-input{
+    font-size:14.5px; font-weight:600; flex:1; min-width:0; padding:1px 4px;
+    border:1px solid var(--border-strong); border-radius:6px; background:var(--surface); color:var(--text);
+  }
+  .mega-folder-name-input:focus{ outline:none; border-color:var(--accent); }
+  .ghost-demo-hint{ font-size:11px; color:var(--text-muted); margin-top:12px; line-height:1.4; }
+  .ghost-demo-hint code{ background:var(--surface-alt); padding:1px 4px; border-radius:4px; }
+  .empty-hint{ text-align:center; color:var(--text-muted); font-size:12.5px; padding:16px 8px 8px; }
+
+  /* ---------- account overlay / sheet ---------- */
+  #account-overlay{
+    display:none; position:fixed; inset:0; z-index:60;
+    background:rgba(0,0,0,0.4); align-items:flex-end; justify-content:center;
+  }
+  #account-overlay.show{ display:flex; }
+  #account-sheet{
+    width:100%; max-width:480px; background:var(--surface);
+    border-radius:20px 20px 0 0; padding:20px 18px calc(18px + var(--safe-bottom));
+    max-height:82vh; overflow-y:auto;
+  }
+  .account-header{ display:flex; align-items:center; gap:12px; margin-bottom:18px; }
+  .account-avatar-big{
+    width:36px; height:36px; border-radius:50%; color:#fff;
+    display:flex; align-items:center; justify-content:center;
+    font-size:14px; font-weight:700; flex-shrink:0;
+  }
+  .account-name{ font-size:15.5px; font-weight:600; margin:0; }
+  .account-sub{ font-size:12.5px; color:var(--text-muted); margin:2px 0 0; }
+  .section-label{
+    font-size:11.5px; font-weight:600; color:var(--text-muted);
+    text-transform:uppercase; letter-spacing:.03em; margin:0 0 10px;
+  }
+  #account-folder-list{ display:flex; flex-direction:column; gap:0; margin-bottom:8px; }
+  .acc-folder-row{
+    display:flex; align-items:center; gap:10px;
+    padding:9px 2px; border-bottom:1px solid var(--border);
+  }
+  .acc-folder-row:last-child{ border-bottom:none; }
+  .acc-folder-name{
+    flex:1; font-size:14px; min-width:0;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .acc-folder-actions{ display:flex; align-items:center; gap:6px; flex-shrink:0; }
+  .row-action{
+    width:30px; height:30px; padding:0; border-radius:50%;
+    border:1px solid var(--border-strong);
+    background:var(--surface-alt); color:var(--text-secondary);
+    display:flex; align-items:center; justify-content:center; flex-shrink:0;
+  }
+  .row-action.row-trash.is-cancel{ background:var(--surface-alt); color:var(--text); }
+  .row-action.row-confirm{ background:var(--danger); border-color:var(--danger); color:#fff; animation:confirmIn .16s ease; }
+  @keyframes confirmIn{ from{ opacity:0; transform:scale(.6); } to{ opacity:1; transform:scale(1); } }
+  .acc-folder-empty{ font-size:12.5px; color:var(--text-muted); padding:6px 2px; }
+  .dev-tools{ margin-top:18px; padding-top:14px; border-top:1px solid var(--border); display:flex; flex-direction:column; gap:2px; }
+  .dev-tools-label{ font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:.03em; margin:0 0 4px; }
+  .dev-btn{ all:unset; box-sizing:border-box; text-align:left; color:var(--text-secondary); font-size:12.5px; padding:6px 2px; cursor:pointer; }
+  .dev-btn.danger{ color:var(--danger); }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <header class="topbar">
+    <button class="icon-btn" id="back-btn" aria-label="Indietro" hidden></button>
+    <h1 id="topbar-title">Le tue prove<span class="badge-proto">prototipo</span></h1>
+    <button class="avatar-btn" id="account-btn" type="button" hidden aria-label="Account"></button>
+    <button class="icon-btn" id="theme-btn" aria-label="Cambia tema"></button>
+    <button class="icon-btn" id="refresh-btn" aria-label="Aggiorna"></button>
+  </header>
+
+  <main id="gate-view" hidden></main>
+  <main id="home-view"></main>
+  <main id="track-view" hidden>
+    <div class="sort-bar">
+      <button class="bulk-dl-btn" id="bulk-dl-btn" type="button">
+        <span class="bulk-dl-fill" id="bulk-dl-fill"></span>
+        <span class="bulk-dl-icon" id="bulk-dl-icon"></span>
+        <span class="bulk-dl-label" id="bulk-dl-label">Scarica tutte</span>
+      </button>
+      <button type="button" class="sort-toggle" id="sort-toggle" aria-label="Ordina per più votate">
+        <span class="sort-icon" id="sort-icon-order"></span>
+        <span class="sort-icon" id="sort-icon-star"></span>
+      </button>
+    </div>
+    <div id="folder-track-list"></div>
+  </main>
+</div>
+
+<div id="bulk-download-overlay">
+  <div id="bulk-download-sheet">
+    <h3>Scaricare tutte le tracce?</h3>
+    <p id="bulk-download-text"></p>
+    <div class="actions">
+      <button id="bulk-download-cancel">Annulla</button>
+      <button id="bulk-download-ok" class="btn-primary">Scarica</button>
+    </div>
+  </div>
+</div>
+
+<div id="track-details-overlay">
+  <div id="track-details-sheet">
+    <h3 id="td-title"></h3>
+    <div class="td-stats">
+      <div class="td-stat"><span class="td-stat-value" id="td-duration"></span><span class="td-stat-label">durata</span></div>
+      <div class="td-stat"><span class="td-stat-value" id="td-listens"></span><span class="td-stat-label">ascolti</span></div>
+      <div class="td-stat"><span class="td-stat-value" id="td-comments"></span><span class="td-stat-label">commenti</span></div>
+      <div class="td-stat"><span class="td-stat-value" id="td-downloads"></span><span class="td-stat-label">download</span></div>
+    </div>
+    <div class="td-chart-head">
+      <p class="td-section-label">Punti più ascoltati</p>
+      <button id="td-play-btn" class="icon-btn" aria-label="Play/pausa"></button>
+    </div>
+    <div id="td-chart"></div>
+    <p class="td-hint" id="td-hint"></p>
+    <button id="track-details-close">Chiudi</button>
+  </div>
+</div>
+
+<div id="mini-player">
+  <div class="inner">
+    <div class="mini-eq" id="mini-eq"></div>
+    <div class="mini-title" id="mini-title">—<span class="mini-sub" id="mini-sub"></span></div>
+    <button class="icon-btn" id="mini-comment-btn" aria-label="Vai alla traccia per commentare"></button>
+    <button class="icon-btn" id="mini-play-btn" aria-label="Pausa"></button>
+  </div>
+  <button id="lockscreen-trigger">Prova la schermata bloccata</button>
+</div>
+
+<div id="toast"></div>
+
+<div id="lockscreen-overlay">
+  <div id="lockscreen-clock">
+    <div id="lockscreen-time">21:47</div>
+    <div id="lockscreen-date">Sabato 25 luglio</div>
+  </div>
+  <div id="lockscreen-notification">
+    <div class="ln-top">
+      <span class="ln-app-icon"></span>
+      <span class="ln-app-name">Prove</span>
+      <span class="ln-app-time">adesso</span>
+    </div>
+    <div class="ln-body">
+      <div class="ln-eq" id="ln-eq"></div>
+      <button type="button" class="ln-title-wrap" id="ln-title-wrap">
+        <span class="ln-title" id="ln-title">—</span>
+        <span class="ln-time"><span id="ln-time-value">0:00</span> — tocca per tornare alla traccia</span>
+      </button>
+      <button class="icon-btn" id="ln-comment-btn" aria-label="Aggiungi un commento veloce"></button>
+      <button class="icon-btn" id="ln-play-btn" aria-label="Pausa"></button>
+    </div>
+    <div id="ln-reply-row">
+      <span id="ln-reply-time"></span>
+      <input type="text" id="ln-reply-input" placeholder="Scrivi qui...">
+      <button id="ln-reply-send" aria-label="Invia"></button>
+    </div>
+  </div>
+  <button id="lockscreen-close">Chiudi simulazione</button>
+</div>
+
+<div id="confirm-overlay">
+  <div id="confirm-sheet">
+    <h3>Eliminare il commento?</h3>
+    <p>Non si può annullare. Il commento sparirà per tutto il gruppo al prossimo aggiornamento.</p>
+    <div class="actions">
+      <button id="confirm-cancel">Annulla</button>
+      <button id="confirm-ok" class="btn-danger">Elimina</button>
+    </div>
+  </div>
+</div>
+
+<div id="account-overlay">
+  <div id="account-sheet">
+    <div class="account-header">
+      <div class="account-avatar-big" id="account-avatar-big"></div>
+      <div style="flex:1;">
+        <p class="account-name" id="account-name-label"></p>
+        <p class="account-sub">Il tuo account</p>
+      </div>
+      <button id="account-sheet-close" type="button" class="icon-btn" aria-label="Chiudi" style="align-self:flex-start; margin-top:-4px; margin-right:-6px;"></button>
+    </div>
+    <p class="section-label">Cartelle collegate</p>
+    <div id="account-folder-list"></div>
+    <div class="dev-tools">
+      <p class="dev-tools-label">Strumenti di test</p>
+      <button class="dev-btn" id="dev-reset-device" type="button">Simula reinstallazione (cancella solo questo dispositivo)</button>
+      <button class="dev-btn danger" id="dev-reset-cloud" type="button">Svuota tutto il cloud simulato</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ---------- icone SVG inline (offline, nessuna dipendenza esterna) ---------- */
+const ICON = {
+  play: '<svg viewBox="0 0 24 24" width="16" height="16"><polygon points="6,4 20,12 6,20" fill="currentColor"/></svg>',
+  playTiny: '<svg viewBox="0 0 24 24" width="9" height="9"><polygon points="6,4 20,12 6,20" fill="currentColor"/></svg>',
+  pause: '<svg viewBox="0 0 24 24" width="16" height="16"><rect x="5" y="4" width="5" height="16" rx="1" fill="currentColor"/><rect x="14" y="4" width="5" height="16" rx="1" fill="currentColor"/></svg>',
+  send: '<svg viewBox="0 0 24 24" width="15" height="15"><path d="M5 12h13M13 6l6 6-6 6" stroke="currentColor" stroke-width="2.1" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  minus: '<svg viewBox="0 0 14 14" width="12" height="12"><line x1="2" y1="7" x2="12" y2="7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
+  comment: '<svg viewBox="0 0 24 24" width="20" height="20"><path d="M12 4a8 8 0 1 0 4.9 14.3L21 20l-1.3-4.1A8 8 0 0 0 12 4z" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linejoin="round" stroke-linecap="round" transform="translate(-1,-1)"/></svg>',
+  trash: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m-9 0 1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  edit: '<svg viewBox="0 0 24 24" width="14" height="14"><path d="M14.5 4.5l5 5L8 21H3v-5L14.5 4.5z" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linejoin="round" stroke-linecap="round"/></svg>',
+  info: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9.5"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>',
+  check: '<svg viewBox="0 0 24 24" width="13" height="13"><path d="M4 12.5l5 5L20 6" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  more: '<svg viewBox="0 0 24 24" width="15" height="15"><circle cx="12" cy="5" r="1.8" fill="currentColor"/><circle cx="12" cy="12" r="1.8" fill="currentColor"/><circle cx="12" cy="19" r="1.8" fill="currentColor"/></svg>',
+  lock: '<svg viewBox="0 0 24 24" width="13" height="13"><rect x="5" y="11" width="14" height="9" rx="2" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M8 11V8a4 4 0 0 1 8 0v3" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>',
+  unlock: '<svg viewBox="0 0 24 24" width="13" height="13"><rect x="5" y="11" width="14" height="9" rx="2" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M8 11V8a4 4 0 0 1 7.5-2" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>',
+  star: '<svg viewBox="0 0 24 24" width="12" height="12"><polygon points="12,2.5 15.1,9.3 22.5,10.1 17,15.1 18.5,22.5 12,18.8 5.5,22.5 7,15.1 1.5,10.1 8.9,9.3" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linejoin="round"/></svg>',
+  starFilled: '<svg viewBox="0 0 24 24" width="12" height="12"><polygon points="12,2.5 15.1,9.3 22.5,10.1 17,15.1 18.5,22.5 12,18.8 5.5,22.5 7,15.1 1.5,10.1 8.9,9.3" fill="currentColor"/></svg>',
+  sort: '<svg viewBox="0 0 24 24" width="18" height="18"><path d="M6 4v14M6 18l-3-3M6 18l3-3M18 20V6M18 6l-3 3M18 6l3 3" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  chevronLeft: '<svg viewBox="0 0 24 24" width="18" height="18"><path d="M15 5l-7 7 7 7" stroke="currentColor" stroke-width="2.1" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  chevronRight: '<svg viewBox="0 0 24 24" width="18" height="18"><path d="M9 5l7 7-7 7" stroke="currentColor" stroke-width="2.1" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  chevronDown: '<svg viewBox="0 0 24 24" width="13" height="13"><path d="M5 8l7 7 7-7" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  chevronUp: '<svg viewBox="0 0 24 24" width="13" height="13"><path d="M5 15l7-7 7 7" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  back: '<svg viewBox="0 0 24 24" width="19" height="19"><path d="M15 5l-7 7 7 7" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  refresh: '<svg viewBox="0 0 24 24" width="18" height="18"><path d="M4 10a8 8 0 0 1 14-4.9M20 14a8 8 0 0 1-14 4.9" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/><path d="M18 3v4h-4M6 21v-4h4" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  folder: '<svg viewBox="0 0 24 24" width="19" height="19"><path d="M3 7a1 1 0 0 1 1-1h5l2 2h9a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V7z" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linejoin="round"/></svg>',
+  chevronRightSmall: '<svg viewBox="0 0 24 24" width="15" height="15"><path d="M9 5l7 7-7 7" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  link: '<svg viewBox="0 0 24 24" width="11" height="11"><path d="M9.5 14.5l5-5M8 12l-2.5 2.5a3 3 0 0 0 4.24 4.24L12 16.5M16 12l2.5-2.5a3 3 0 0 0-4.24-4.24L12 7.5" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  mic: '<svg viewBox="0 0 24 24" width="17" height="17"><rect x="9" y="3" width="6" height="11" rx="3" stroke="currentColor" stroke-width="1.7" fill="none"/><path d="M6 11a6 6 0 0 0 12 0M12 17v3.5" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linecap="round"/></svg>',
+  cloud: '<svg viewBox="0 0 24 24" width="18" height="18"><path d="M7 18a4 4 0 0 1-.6-7.96A5.5 5.5 0 0 1 17.2 9.02 4 4 0 0 1 17 18H7z" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linejoin="round"/></svg>',
+  cloudDone: '<svg viewBox="0 0 24 24" width="18" height="18"><path d="M7 17a4 4 0 0 1-.6-7.96A5.5 5.5 0 0 1 17.2 8.02 4 4 0 0 1 17 17H7z" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linejoin="round"/><path d="M9.5 13l1.8 1.8L14.5 11" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  sun: '<svg viewBox="0 0 24 24" width="17" height="17"><circle cx="12" cy="12" r="4.2" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M12 2.5v2.3M12 19.2v2.3M4.5 12H2.2M21.8 12h-2.3M6 6l1.6 1.6M16.4 16.4L18 18M18 6l-1.6 1.6M7.6 16.4L6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
+  moon: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linejoin="round"/></svg>',
+  plus: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg>',
+  pencil: '<svg viewBox="0 0 24 24" width="14" height="14"><path d="M14.5 4.5l5 5L8 21H3v-5L14.5 4.5z" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linejoin="round" stroke-linecap="round"/></svg>',
+  x: '<svg viewBox="0 0 24 24" width="14" height="14"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round"/></svg>'
+};
+function setIcon(el, name){ el.innerHTML = ICON[name]; }
+
+/* ---------- animazioni di apertura/chiusura senza scatti ---------- */
+/* Le proprietà che spostano il layout (height) si possono animare solo esplicitamente:
+   misuriamo l'altezza finale, partiamo da 0 e transizioniamo, poi torniamo ad "auto"
+   cosicché il contenuto sotto si sposti sempre con un movimento morbido invece di un salto.
+   IMPORTANTE: se l'elemento non è renderizzato in questo momento (es. appartiene a una
+   cartella che non stai guardando), il browser non manderà mai "transitionend" — in quel
+   caso saltiamo l'animazione e applichiamo subito lo stato finale, altrimenti l'elemento
+   resterebbe bloccato a metà per sempre. */
+function isRendered(el){
+  return !!(el.offsetParent || el.getClientRects().length);
+}
+function expandBlock(el, renderFn){
+  if(el.dataset.animating === '1') return;
+  el.style.display = 'flex';
+  if(renderFn) renderFn();
+  if(!isRendered(el)){
+    el.style.height = 'auto';
+    el.style.overflow = '';
+    el.style.transition = '';
+    el.dataset.animating = '0';
+    return;
+  }
+  const target = el.scrollHeight;
+  el.style.height = '0px';
+  el.style.overflow = 'hidden';
+  el.style.willChange = 'height';
+  void el.offsetHeight;
+  el.dataset.animating = '1';
+  el.style.transition = 'height .2s cubic-bezier(.4,0,.2,1)';
+  requestAnimationFrame(()=>{ el.style.height = target + 'px'; });
+  const done = ()=>{
+    el.style.height = 'auto';
+    el.style.overflow = '';
+    el.style.transition = '';
+    el.style.willChange = '';
+    el.dataset.animating = '0';
+    el.removeEventListener('transitionend', done);
+  };
+  el.addEventListener('transitionend', done);
+}
+function collapseBlock(el){
+  if(el.style.display !== 'flex' || el.dataset.animating === '1') return;
+  if(!isRendered(el)){
+    hardClose(el);
+    return;
+  }
+  const start = el.scrollHeight;
+  el.style.height = start + 'px';
+  el.style.overflow = 'hidden';
+  el.style.willChange = 'height';
+  void el.offsetHeight;
+  el.dataset.animating = '1';
+  el.style.transition = 'height .16s ease';
+  requestAnimationFrame(()=>{ el.style.height = '0px'; });
+  const done = ()=>{
+    el.style.display = 'none';
+    el.style.height = '';
+    el.style.overflow = '';
+    el.style.transition = '';
+    el.style.willChange = '';
+    el.dataset.animating = '0';
+    el.removeEventListener('transitionend', done);
+  };
+  el.addEventListener('transitionend', done);
+}
+/* Chiude un blocco istantaneamente, senza animazione — e soprattutto ripulisce
+   qualunque stato di animazione lasciato a metà, altrimenti expandBlock/collapseBlock
+   penserebbero per sempre che sia "ancora in animazione" e si rifiuterebbero di riaprirlo. */
+function hardClose(el){
+  el.style.display = 'none';
+  el.style.height = '';
+  el.style.overflow = '';
+  el.style.transition = '';
+  el.dataset.animating = '0';
+}
+
+/* ---------- tema ---------- */
+const themeBtn = document.getElementById('theme-btn');
+let dark = false;
+function applyTheme(){
+  document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+  setIcon(themeBtn, dark ? 'sun' : 'moon');
+  themeBtn.setAttribute('aria-label', dark ? 'Passa al tema chiaro' : 'Passa al tema scuro');
+}
+themeBtn.addEventListener('click', ()=>{ dark = !dark; applyTheme(); });
+applyTheme();
+
+/* ---------- toast ---------- */
+const toastEl = document.getElementById('toast');
+let toastTimer = null;
+function toast(msg){
+  toastEl.textContent = msg;
+  toastEl.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=> toastEl.classList.remove('show'), 1800);
+}
+
+/* ---------- conferma eliminazione (bottom sheet) ---------- */
+const confirmOverlay = document.getElementById('confirm-overlay');
+const confirmOk = document.getElementById('confirm-ok');
+const confirmCancel = document.getElementById('confirm-cancel');
+let pendingConfirm = null;
+function askConfirmDelete(onConfirm){
+  pendingConfirm = onConfirm;
+  confirmOverlay.classList.add('show');
+}
+function closeConfirm(){ confirmOverlay.classList.remove('show'); pendingConfirm = null; }
+confirmCancel.addEventListener('click', closeConfirm);
+confirmOverlay.addEventListener('click', (e)=>{ if(e.target === confirmOverlay) closeConfirm(); });
+confirmOk.addEventListener('click', ()=>{
+  const fn = pendingConfirm;
+  closeConfirm();
+  if(fn) fn();
+});
+
+/* ---------- singolo dropdown della traccia aperto per volta, in tutta l'app ---------- */
+let activeOpenMenuCloser = null;
+
+/* ---------- dati finti ---------- */
+const AVATAR_COLOR = {A:'var(--avatar-a)', M:'var(--avatar-m)', L:'var(--avatar-l)', T:'var(--avatar-t)'};
+const ME = 'T';
+
+/* ---------- palette account ---------- */
+const PALETTE = ['a','m','l','t','g','r','o'];
+
+/* ---------- persistenza localStorage (prototipo: simula cloud + device) ----------
+   cloud  = simula Firestore: sopravvive al refresh, fonte di verità del gruppo.
+            In produzione → Firestore. Qui: localStorage con chiave CLOUD_KEY.
+   device = simula cache locale (SharedPreferences/Room).
+            In produzione → SQLite / AsyncStorage. Qui: localStorage DEVICE_KEY.
+   I dati delle tracce (commenti, star, ecc.) restano in memoria per ora;
+   in produzione verranno scritti su Firestore e sincronizzati con il tasto sync.
+------------------------------------------------------------------- */
+const CLOUD_KEY = 'prove_cloud_v2';
+const DEVICE_KEY = 'prove_device_v2';
+
+function loadCloud(){
+  let raw = localStorage.getItem(CLOUD_KEY);
+  if(!raw){
+    /* seed: le cartelle demo esistono già nel cloud simulato */
+    const seed = {
+      utenti: {},
+      cartelle: {
+        'DEMO_F1': { nome:'Prova 12 giugno', megaLink:'https://mega.nz/folder/DEMO_F1#key', megaFolderId:'DEMO_F1', creatoDa:'seed', ultimaSync:Date.now(), numTracce:10 },
+        'DEMO_F2': { nome:'Prova 5 giugno',  megaLink:'https://mega.nz/folder/DEMO_F2#key', megaFolderId:'DEMO_F2', creatoDa:'seed', ultimaSync:Date.now(), numTracce:2 },
+        'DEMO_F3': { nome:'Prova 29 maggio', megaLink:'https://mega.nz/folder/DEMO_F3#key', megaFolderId:'DEMO_F3', creatoDa:'seed', ultimaSync:Date.now(), numTracce:1 }
+      }
+    };
+    localStorage.setItem(CLOUD_KEY, JSON.stringify(seed));
+    return seed;
+  }
+  return JSON.parse(raw);
+}
+function saveCloud(){ localStorage.setItem(CLOUD_KEY, JSON.stringify(cloud)); }
+
+function loadDevice(){
+  const raw = localStorage.getItem(DEVICE_KEY);
+  return raw ? JSON.parse(raw) : { identity:null, linked:[] };
+}
+function saveDevice(){ localStorage.setItem(DEVICE_KEY, JSON.stringify(device)); }
+
+let cloud = loadCloud();
+let device = loadDevice();
+
+function normalizeName(n){ return n.toLowerCase().trim(); }
+function uid(){ return (crypto.randomUUID ? crypto.randomUUID() : 'u_'+Math.random().toString(36).slice(2)+Date.now()); }
+function currentCloudUser(){ return device.identity ? cloud.utenti[device.identity.norm] : null; }
+function syncLinkedToCloudUser(){
+  const cu = currentCloudUser();
+  if(!cu) return;
+  cu.cartelleCollegate = device.linked.slice();
+  saveCloud();
+}
+
+function parseFolderId(link){
+  if(!link || !link.includes('/folder/')) return null;
+  const after = link.split('/folder/')[1];
+  if(!after) return null;
+  const id = after.split('#')[0].split('/')[0].trim();
+  return id || null;
+}
+function suggestFolderName(folderId){
+  return 'Cartella ' + folderId.slice(0,6);
+}
+
+const folders = [
+  { id:'f1', name:'Prova 12 giugno', tracks:[
+      { id:'t1', title:'Idea ritornello nuovo', duration:158, downloaded:false, myVote:'full', fullCount:3, halfCount:1, listenCount:14, playBuckets:[2,3,2,4,3,5,6,9,14,18,16,10,6,4,3,5,7,8,6,4,3,2,3,2], comments:[
+          {id:5, author:'M', name:'Marco', time:12, text:'partenza fortissima, teniamola così'},
+          {id:6, author:'L', name:'Luca', time:70, text:'qui secondo me serve un giro di basso diverso, magari più semplice per lasciare respiro alla voce'},
+          {id:7, author:'A', name:'Ale', time:130, text:'guarda questo accordo, mi sembra simile a uno che avevamo provato'}
+        ] },
+      { id:'t2', title:'Strofa base + drum', duration:205, downloaded:true, myVote:'half', fullCount:0, halfCount:2, listenCount:7, comments:[
+          {id:1, author:'A', name:'Ale', time:38, text:'bella entrata di basso qui'},
+          {id:2, author:'M', name:'Marco', time:102, text:'qui rallenterei un attimo, secondo me il fill di batteria arriva un filo presto rispetto al resto e disturba la transizione verso il ritornello'},
+          {id:3, author:'A', name:'Ale', time:170, text:'ottimo il break qui, teniamolo'}
+        ]},
+      { id:'t3', title:'Outro strumentale', duration:96, downloaded:false, myVote:'none', fullCount:0, halfCount:0, comments:[
+          {id:4, author:'L', name:'Luca', time:40, text:'qui ci starebbe un delay sulla chitarra'},
+          {id:8, author:'M', name:'Marco', time:60, text:'concordo con Luca, magari anche un filo di riverbero in più'}
+        ]},
+      { id:'t3b', title:'Ponte strumentale', duration:88, downloaded:false, myVote:'none', fullCount:0, halfCount:0, comments:[] },
+      { id:'t3c', title:'Improvvisazione chitarra', duration:142, downloaded:false, myVote:'half', fullCount:0, halfCount:1, comments:[
+          {id:20, author:'A', name:'Ale', time:50, text:'questo assolo mi piace, lo terrei'}
+        ]},
+      { id:'t3d', title:'Idea strofa 2', duration:110, downloaded:true, myVote:'none', fullCount:0, halfCount:0, comments:[] },
+      { id:'t3e', title:'Prova voce sola', duration:75, downloaded:false, myVote:'none', fullCount:0, halfCount:0, comments:[
+          {id:21, author:'L', name:'Luca', time:20, text:'la voce qui è ancora acerba ma il fraseggio funziona'}
+        ]},
+      { id:'t3f', title:'Groove basso e batteria', duration:130, downloaded:false, myVote:'full', fullCount:2, halfCount:0, comments:[] },
+      { id:'t3g', title:'Finale alternativo', duration:95, downloaded:false, myVote:'none', fullCount:0, halfCount:0, comments:[
+          {id:22, author:'M', name:'Marco', time:60, text:'proviamo a chiudere così invece del solito finale'}
+        ]},
+      { id:'t3h', title:'Take completo prova', duration:225, downloaded:true, myVote:'half', fullCount:0, halfCount:1, comments:[] }
+  ]},
+  { id:'f2', name:'Prova 5 giugno', tracks:[
+      { id:'t4', title:'Riff verse A', duration:120, downloaded:false, myVote:'none', fullCount:1, halfCount:2, comments:[
+          {id:9, author:'A', name:'Ale', time:8, text:'proviamo a suonarlo un tono più basso?'},
+          {id:10, author:'L', name:'Luca', time:55, text:'per me va bene così com e adesso'}
+        ] },
+      { id:'t5', title:'Jam libera', duration:340, downloaded:false, myVote:'full', fullCount:4, halfCount:0, listenCount:22, comments:[
+          {id:11, author:'M', name:'Marco', time:40, text:'questo pezzo di improvvisazione è oro, non perdiamolo'},
+          {id:12, author:'A', name:'Ale', time:210, text:'da qui in poi si perde leggermente il filo, potremmo tagliare e usare solo la prima parte per farne una canzone vera'},
+          {id:13, author:'L', name:'Luca', time:298, text:'il finale mi ricorda vagamente un altro giro nostro, bello'}
+        ] }
+  ]},
+  { id:'f3', name:'Prova 29 maggio', tracks:[
+      { id:'t6', title:'Take 1 canzone nuova', duration:180, downloaded:false, myVote:'none', fullCount:0, halfCount:0, comments:[
+          {id:14, author:'M', name:'Marco', time:5, text:'prima take, incerta ma la lascio come riferimento'},
+          {id:15, author:'A', name:'Ale', time:95, text:'la voce qui è stonata ma la melodia mi piace molto, la terrei come base'},
+          {id:16, author:'L', name:'Luca', time:150, text:'per il prossimo giro proviamo con la chitarra pulita invece che distorta'}
+        ] }
+  ]}
+];
+let nextCommentId = 100;
+
+/* ---------- utility tempo ---------- */
+function secToLabel(s){
+  s = Math.max(0, Math.round(s));
+  const m = Math.floor(s/60), sec = s%60;
+  return m + ':' + (sec<10?'0':'') + sec;
+}
+function labelToSec(l){
+  const p = String(l).split(':');
+  if(p.length!==2) return 0;
+  const m = parseInt(p[0],10)||0, s = parseInt(p[1],10)||0;
+  return m*60+s;
+}
+
+/* ---------- navigazione ---------- */
+const homeView = document.getElementById('home-view');
+const trackView = document.getElementById('track-view');
+const folderTrackList = document.getElementById('folder-track-list');
+const backBtn = document.getElementById('back-btn');
+const refreshBtn = document.getElementById('refresh-btn');
+const topbarTitle = document.getElementById('topbar-title');
+const sortToggle = document.getElementById('sort-toggle');
+const sortIconOrder = document.getElementById('sort-icon-order');
+const sortIconStar = document.getElementById('sort-icon-star');
+setIcon(refreshBtn,'refresh');
+setIcon(backBtn,'back');
+setIcon(sortIconOrder,'sort');
+setIcon(sortIconStar,'star');
+
+const folderDomCache = {};
+let sortMode = 'default'; // 'default' (ordine numerico originale) | 'favorites' (più votate)
+let currentFolder = null;
+/* ogni card registra qui un modo per aggiornare solo il proprio indicatore di download,
+   usato dallo "Scarica tutte" per riflettere lo stato mano a mano che procede */
+const trackDlRefreshHooks = {};
+/* stesso schema, ma per far partire/fermare l'ascolto da un punto preciso del grafico
+   nel foglio "Dettagli traccia" — quel foglio è globale, non ha accesso diretto
+   alle funzioni play/pausa che vivono dentro la card di ogni singola traccia */
+const trackPlaybackHooks = {};
+
+function showHome(){
+  if(!device.identity){ showGate(); return; }
+  gateView.hidden = true;
+  homeView.hidden = false;
+  trackView.hidden = true;
+  backBtn.hidden = true;
+  accountBtn.hidden = false;
+  renderAccountButton();
+  currentFolder = null;
+  topbarTitle.innerHTML = 'Le tue prove<span class="badge-proto">prototipo</span>';
+  renderHome();
+}
+function showFolder(folder){
+  homeView.hidden = true;
+  trackView.hidden = false;
+  backBtn.hidden = false;
+  currentFolder = folder;
+  topbarTitle.textContent = folder.name;
+  renderFolder(folder);
+  applySort(folder);
+  updateBulkDlButton();
+}
+backBtn.addEventListener('click', showHome);
+refreshBtn.addEventListener('click', ()=>{
+  const svg = refreshBtn.querySelector('svg');
+  if(svg){ svg.classList.remove('refresh-spin'); void svg.offsetWidth; svg.classList.add('refresh-spin'); }
+  toast('Aggiornato — nessuna novità');
+});
+
+/* Un solo tasto, entrambe le icone dentro: un tap lo fa passare da qualunque stato
+   sia adesso all'altro — niente due zone tra cui scegliere. */
+function updateSortToggle(){
+  sortIconOrder.classList.toggle('is-active', sortMode === 'default');
+  sortIconStar.classList.toggle('is-active', sortMode === 'favorites');
+  sortToggle.setAttribute('aria-label', sortMode === 'favorites' ? "Passa all'ordine numerico" : 'Ordina per più votate');
+}
+updateSortToggle();
+sortToggle.addEventListener('click', ()=>{
+  sortMode = sortMode === 'favorites' ? 'default' : 'favorites';
+  updateSortToggle();
+  applySort(currentFolder);
+});
+
+/* ---------- "Scarica tutte" per la cartella aperta ---------- */
+const bulkDlBtn = document.getElementById('bulk-dl-btn');
+const bulkDlFill = document.getElementById('bulk-dl-fill');
+const bulkDlIcon = document.getElementById('bulk-dl-icon');
+const bulkDlLabel = document.getElementById('bulk-dl-label');
+const bulkDownloadOverlay = document.getElementById('bulk-download-overlay');
+const bulkDownloadText = document.getElementById('bulk-download-text');
+const bulkDownloadCancel = document.getElementById('bulk-download-cancel');
+const bulkDownloadOk = document.getElementById('bulk-download-ok');
+let bulkDownloading = false;
+
+function updateBulkDlButton(){
+  if(bulkDownloading) return; // non sovrascrivere lo stato mentre è in corso
+  if(!currentFolder){ setIcon(bulkDlIcon,'cloud'); bulkDlLabel.textContent = 'Scarica tutte'; return; }
+  const total = currentFolder.tracks.length;
+  const done = currentFolder.tracks.filter(t=>t.downloaded).length;
+  bulkDlBtn.classList.remove('is-downloading');
+  if(done >= total){
+    bulkDlBtn.classList.add('is-complete');
+    bulkDlFill.style.width = '100%';
+    setIcon(bulkDlIcon,'cloudDone');
+    bulkDlLabel.textContent = 'Tutte scaricate';
+  } else if(done > 0){
+    bulkDlBtn.classList.remove('is-complete');
+    bulkDlFill.style.width = Math.round((done/total)*100) + '%';
+    setIcon(bulkDlIcon,'cloud');
+    bulkDlLabel.textContent = done + '/' + total + ' scaricate';
+  } else {
+    bulkDlBtn.classList.remove('is-complete');
+    bulkDlFill.style.width = '0%';
+    setIcon(bulkDlIcon,'cloud');
+    bulkDlLabel.textContent = 'Scarica tutte';
+  }
+}
+updateBulkDlButton();
+
+bulkDlBtn.addEventListener('click', ()=>{
+  if(bulkDownloading) return;
+  if(!currentFolder) return;
+  const remaining = currentFolder.tracks.filter(t=>!t.downloaded);
+  if(remaining.length === 0){ toast('Sono già tutte scaricate'); return; }
+  bulkDownloadText.textContent = remaining.length === currentFolder.tracks.length
+    ? `Scaricare tutte le ${remaining.length} tracce di questa cartella?`
+    : `Scaricare le ${remaining.length} tracce mancanti di questa cartella?`;
+  bulkDownloadOverlay.classList.add('show');
+});
+bulkDownloadCancel.addEventListener('click', ()=> bulkDownloadOverlay.classList.remove('show'));
+bulkDownloadOverlay.addEventListener('click', (e)=>{ if(e.target === bulkDownloadOverlay) bulkDownloadOverlay.classList.remove('show'); });
+bulkDownloadOk.addEventListener('click', ()=>{
+  bulkDownloadOverlay.classList.remove('show');
+  startBulkDownload(currentFolder);
+});
+
+/* ---------- dettagli traccia: informazione da cercare deliberatamente nel menu "...",
+   mai mostrata passivamente scorrendo la lista — vedi il ragionamento sul perché. ---------- */
+const trackDetailsOverlay = document.getElementById('track-details-overlay');
+const tdTitle = document.getElementById('td-title');
+const tdDuration = document.getElementById('td-duration');
+const tdListens = document.getElementById('td-listens');
+const tdComments = document.getElementById('td-comments');
+const tdChart = document.getElementById('td-chart');
+const tdDownloads = document.getElementById('td-downloads');
+const tdPlayBtn = document.getElementById('td-play-btn');
+const tdHint = document.getElementById('td-hint');
+const trackDetailsClose = document.getElementById('track-details-close');
+
+function openTrackDetails(track, totalSeconds){
+  tdTitle.textContent = track.title;
+  tdDuration.textContent = secToLabel(totalSeconds);
+  tdListens.textContent = track.listenCount || 0;
+  tdComments.textContent = track.comments.length;
+  tdDownloads.textContent = track.downloadEvents || 0;
+
+  const buckets = track.playBuckets || new Array(24).fill(0);
+  const max = Math.max(1, ...buckets);
+  const w = 280, h = 52, n = buckets.length;
+  const stepX = w / (n - 1);
+  const points = buckets.map((v,i)=> [i*stepX, h - (v/max)*h*0.88 - 2]);
+  const linePath = points.map((p,i)=> (i===0?'M':'L') + p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join(' ');
+  const areaPath = linePath + ` L${w} ${h} L0 ${h} Z`;
+  const hasData = buckets.some(v=>v>0);
+  tdChart.innerHTML = hasData
+    ? `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">
+         <path d="${areaPath}" fill="var(--accent-soft)" stroke="none"/>
+         <path d="${linePath}" fill="none" stroke="var(--accent)" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>
+       </svg>`
+    : '';
+  tdHint.textContent = hasData
+    ? 'Tocca il grafico per riascoltare da quel punto. I download non garantiscono che la traccia sia stata poi ascoltata qui.'
+    : 'Non ci sono ancora abbastanza ascolti per mostrare un grafico. I download non garantiscono che la traccia sia stata poi ascoltata qui.';
+
+  const hooks = trackPlaybackHooks[track.id];
+  function syncPlayBtn(){
+    const isThisPlaying = hooks && hooks.isPlaying();
+    tdPlayBtn.classList.toggle('is-playing', !!isThisPlaying);
+    setIcon(tdPlayBtn, isThisPlaying ? 'pause' : 'play');
+  }
+  syncPlayBtn();
+  tdChart.onclick = (e)=>{
+    if(!hasData || !hooks) return;
+    const rect = tdChart.querySelector('svg').getBoundingClientRect();
+    const fraction = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    hooks.seekAndPlay(fraction * 100);
+    setTimeout(syncPlayBtn, 50);
+  };
+  tdPlayBtn.onclick = ()=>{
+    if(!hooks) return;
+    if(hooks.isPlaying()) hooks.stop();
+    else hooks.seekAndPlay(0);
+    setTimeout(syncPlayBtn, 50);
+  };
+
+  trackDetailsOverlay.classList.add('show');
+}
+trackDetailsClose.addEventListener('click', ()=> trackDetailsOverlay.classList.remove('show'));
+trackDetailsOverlay.addEventListener('click', (e)=>{ if(e.target === trackDetailsOverlay) trackDetailsOverlay.classList.remove('show'); });
+
+function startBulkDownload(folder){
+  const remaining = folder.tracks.filter(t=>!t.downloaded);
+  if(remaining.length === 0) return;
+  const total = folder.tracks.length;
+  const alreadyDone = total - remaining.length; // quante erano già scaricate prima di iniziare
+  bulkDownloading = true;
+  bulkDlBtn.classList.add('is-downloading');
+  bulkDlBtn.classList.remove('is-complete');
+  setIcon(bulkDlIcon,'cloud');
+  let doneNow = 0;
+  function step(){
+    if(doneNow >= remaining.length){
+      bulkDownloading = false;
+      bulkDlBtn.classList.remove('is-downloading');
+      updateBulkDlButton();
+      toast('Tutte le tracce sono state scaricate');
+      return;
+    }
+    const t = remaining[doneNow];
+    t.downloaded = true;
+    t.downloadEvents = (t.downloadEvents || 0) + 1;
+    if(trackDlRefreshHooks[t.id]) trackDlRefreshHooks[t.id]();
+    doneNow++;
+    const totalDoneSoFar = alreadyDone + doneNow;
+    const pct = Math.round((totalDoneSoFar/total)*100);
+    bulkDlFill.style.width = pct + '%';
+    bulkDlLabel.textContent = totalDoneSoFar + '/' + total + ' scaricate';
+    setTimeout(step, 380);
+  }
+  step();
+}
+
+/* Riordina spostando gli elementi già esistenti (mai ricreandoli): così facendo
+   non si perde nessuno stato — traccia in ascolto, commenti aperti, selezione. */
+function applySort(folder){
+  if(!folder) return;
+  const cache = folderDomCache[folder.id];
+  if(!cache) return;
+  let order = folder.tracks;
+  if(sortMode === 'favorites'){
+    const score = t => t.fullCount + t.halfCount*0.5;
+    order = [...folder.tracks].sort((a,b)=>{
+      if(score(b) !== score(a)) return score(b) - score(a);
+      return folder.tracks.indexOf(a) - folder.tracks.indexOf(b); // pareggio: resta l'ordine originale di MEGA
+    });
+  }
+  order.forEach(t => cache.container.appendChild(cache.els.get(t.id)));
+}
+
+function renderHome(autoRenameId){
+  homeView.innerHTML = '';
+  folders.forEach(f=>{
+    const card = document.createElement('button');
+    card.className = 'folder-card';
+    card.innerHTML = `
+      <div class="folder-icon"></div>
+      <div class="folder-meta">
+        <p class="name"></p>
+        <p class="sub"></p>
+      </div>
+      <div style="color:var(--text-muted); flex-shrink:0;"></div>
+    `;
+    setIcon(card.querySelector('.folder-icon'), 'folder');
+    card.querySelector('.name').textContent = f.name;
+    card.querySelector('.sub').textContent = f.tracks.length + (f.tracks.length===1?' traccia':' tracce');
+    setIcon(card.querySelector('div:last-child'), 'chevronRightSmall');
+    card.addEventListener('click', ()=> showFolder(f));
+    homeView.appendChild(card);
+  });
+  /* cartelle aggiunte manualmente via link Mega */
+  device.linked.forEach(id=>{
+    const f = cloud.cartelle[id];
+    if(!f) return;
+    homeView.appendChild(buildMegaFolderCard(id, f, id === autoRenameId));
+  });
+  /* ghost card: collega cartella Mega aggiuntiva */
+  homeView.appendChild(buildGhostCard());
+}
+
+/* Ogni cartella viene costruita una sola volta e poi solo spostata dentro/fuori dalla vista:
+   così, finché una traccia resta in riproduzione, tutto il suo stato (commento selezionato,
+   liste aperte) sopravvive anche navigando tra cartelle diverse. Si azzera solo quando
+   quella riproduzione viene fermata o ne parte una nuova (vedi stopPlayback). */
+function renderFolder(folder){
+  folderTrackList.innerHTML = '';
+  if(!folderDomCache[folder.id]){
+    const container = document.createElement('div');
+    const els = new Map();
+    folder.tracks.forEach(t => {
+      const cardEl = buildTrackCard(t);
+      els.set(t.id, cardEl);
+      container.appendChild(cardEl);
+    });
+    folderDomCache[folder.id] = {container, els};
+  }
+  folderTrackList.appendChild(folderDomCache[folder.id].container);
+}
+
+/* ---------- mini player ---------- */
+const miniPlayer = document.getElementById('mini-player');
+const miniEq = document.getElementById('mini-eq');
+const miniTitle = document.getElementById('mini-title');
+const miniPlayBtn = document.getElementById('mini-play-btn');
+for(let i=0;i<5;i++){ const d=document.createElement('div'); miniEq.appendChild(d); }
+let miniEqTimer = null;
+function startMiniEq(){
+  clearInterval(miniEqTimer);
+  miniEqTimer = setInterval(()=>{
+    miniEq.querySelectorAll('div').forEach(d=> d.style.height = (4+Math.random()*11)+'px');
+  }, 220);
+}
+function stopMiniEq(){ clearInterval(miniEqTimer); }
+
+let miniPlayerTrack = null;
+let miniPlayerCardEl = null;
+let miniVisibilityObserver = null;
+let miniWatchedCardEl = null;
+
+function findFolderForTrack(trackId){
+  return folders.find(f => f.tracks.some(t => t.id === trackId)) || null;
+}
+
+/* Calcola per davvero se la card è visibile in questo istante (invece di
+   indovinare e aspettare che l'observer corregga più tardi). */
+function isCardVisibleNow(cardEl){
+  const r = cardEl.getBoundingClientRect();
+  if(r.width === 0 && r.height === 0) return false; // fuori dal DOM (cartella non aperta)
+  const vh = window.innerHeight || document.documentElement.clientHeight;
+  const visibleHeight = Math.min(r.bottom, vh) - Math.max(r.top, 0);
+  return visibleHeight > r.height * 0.35;
+}
+
+/* Il "collegamento" tra la barra e una traccia si rompe per sempre nel momento
+   esatto in cui: sei in pausa E rivedi la card (in quel preciso istante, non prima).
+   A quel punto non ha più senso che la barra ricompaia allontanandoti di nuovo —
+   non stai ascoltando nulla, ti sei già "ricongiunto" con la traccia guardandola.
+   Se invece la traccia sta ancora suonando, vedere la card la nasconde solo
+   temporaneamente: il collegamento resta vivo e la barra torna ad allontanarti. */
+function severMiniPlayerConnection(){
+  if(miniVisibilityObserver){ miniVisibilityObserver.disconnect(); miniVisibilityObserver = null; }
+  miniWatchedCardEl = null;
+  miniPlayerTrack = null;
+  miniPlayerCardEl = null;
+  miniPlayer.style.display = 'none';
+  stopMiniEq();
+}
+
+function watchMiniPlayerVisibility(cardEl){
+  const visible = isCardVisibleNow(cardEl);
+  if(visible && !isNowPlaying){ severMiniPlayerConnection(); return; }
+  miniPlayer.style.display = visible ? 'none' : 'block';
+  if(miniWatchedCardEl === cardEl && miniVisibilityObserver) return; // già osservata, non serve ricreare
+  miniWatchedCardEl = cardEl;
+  if(miniVisibilityObserver) miniVisibilityObserver.disconnect();
+  miniVisibilityObserver = new IntersectionObserver((entries)=>{
+    const entry = entries[0];
+    if(entry.isIntersecting){
+      if(!isNowPlaying){ severMiniPlayerConnection(); return; }
+      miniPlayer.style.display = 'none';
+    } else {
+      miniPlayer.style.display = 'block';
+    }
+  }, {threshold: 0.35});
+  miniVisibilityObserver.observe(cardEl);
+}
+
+function showMiniPlayer(track, cardEl, onToggle){
+  miniPlayerTrack = track;
+  miniPlayerCardEl = cardEl;
+  miniTitle.innerHTML = track.title + '<span class="mini-sub"><span id="mini-time">0:00</span> — tocca per tornare alla traccia</span>';
+  miniPlayBtn.onclick = onToggle;
+}
+/* Riflette lo stato play/pausa (icona ed equalizzatore) e ricontrolla subito la
+   visibilità reale della card — la pausa può arrivare anche dalla barra stessa,
+   quindi qui la card potrebbe non essere a schermo: va verificato ora. */
+function setMiniPlayerPlaying(isPlaying, cardEl){
+  requestAnimationFrame(()=> setIcon(miniPlayBtn, isPlaying ? 'pause' : 'play'));
+  if(isPlaying) startMiniEq(); else stopMiniEq();
+  if(cardEl) watchMiniPlayerVisibility(cardEl);
+}
+
+function addQuickComment(track, seconds, text){
+  const c = {id: nextCommentId++, author: ME, name: 'Tu', time: Math.round(seconds), text: text};
+  track.comments.push(c);
+  track.comments.sort((a,b)=>a.time-b.time);
+  if(trackRefreshHooks[track.id]) trackRefreshHooks[track.id]();
+  toast('Commento salvato');
+}
+
+/* Il commento dalla barra non ha più un suo riquadro dedicato: dato che sei
+   comunque già dentro l'app, tanto vale portarti sulla card vera e usare la
+   UI completa che già conosci — un tap in meno da mantenere allineato. */
+const miniCommentBtn = document.getElementById('mini-comment-btn');
+setIcon(miniCommentBtn, 'comment');
+miniCommentBtn.addEventListener('click', ()=>{
+  goToNowPlayingTrack();
+  const cardEl = miniPlayerCardEl;
+  const addBtn = cardEl && cardEl.querySelector('.add-btn');
+  if(addBtn) addBtn.click();
+});
+
+/* ---------- simulazione schermata bloccata ----------
+   Su Android/iOS questa sarebbe una vera notifica media con risposta rapida
+   (RemoteInput / notifiche con testo su iOS) — qui la ricreiamo fedelmente
+   per farti provare il gesto, dato che un prototipo web non può davvero
+   comparire sulla lock screen del telefono. */
+const lockscreenTrigger = document.getElementById('lockscreen-trigger');
+const lockscreenOverlay = document.getElementById('lockscreen-overlay');
+const lockscreenClose = document.getElementById('lockscreen-close');
+const lnEq = document.getElementById('ln-eq');
+const lnTitle = document.getElementById('ln-title');
+const lnTime = document.getElementById('ln-time-value');
+const lnTitleWrap = document.getElementById('ln-title-wrap');
+const lnPlayBtn = document.getElementById('ln-play-btn');
+const lnCommentBtn = document.getElementById('ln-comment-btn');
+const lnReplyRow = document.getElementById('ln-reply-row');
+const lnReplyInput = document.getElementById('ln-reply-input');
+const lnReplySend = document.getElementById('ln-reply-send');
+for(let i=0;i<5;i++){ const d=document.createElement('div'); lnEq.appendChild(d); }
+setIcon(lnPlayBtn,'pause');
+setIcon(lnCommentBtn,'comment');
+setIcon(lnReplySend,'send');
+let lnEqTimer = null;
+function syncLockscreenNowPlaying(){
+  if(activePlaybackTrack){
+    lnTitle.textContent = activePlaybackTrack.title;
+    lnTime.textContent = secToLabel(activePlaybackSeconds);
+  }
+}
+lockscreenTrigger.addEventListener('click', ()=>{
+  syncLockscreenNowPlaying();
+  setIcon(lnPlayBtn, isNowPlaying ? 'pause' : 'play');
+  lockscreenOverlay.classList.add('show');
+  clearInterval(lnEqTimer);
+  if(isNowPlaying){
+    lnEqTimer = setInterval(()=>{
+      lnEq.querySelectorAll('div').forEach(d=> d.style.height = (3+Math.random()*10)+'px');
+    }, 220);
+  } else {
+    lnEq.querySelectorAll('div').forEach(d=> d.style.height = '3px');
+  }
+});
+lockscreenClose.addEventListener('click', ()=>{
+  lockscreenOverlay.classList.remove('show');
+  clearInterval(lnEqTimer);
+  lnReplyRow.classList.remove('is-open');
+  lnCommentBtn.classList.remove('is-active');
+  setIcon(lnCommentBtn,'comment');
+  lnReplyInput.value = '';
+});
+lnPlayBtn.addEventListener('click', ()=>{
+  miniPlayBtn.click();
+  requestAnimationFrame(()=> setIcon(lnPlayBtn, isNowPlaying ? 'pause' : 'play'));
+  if(!isNowPlaying){
+    clearInterval(lnEqTimer);
+    lnEq.querySelectorAll('div').forEach(d=> d.style.height = '3px');
+  } else {
+    clearInterval(lnEqTimer);
+    lnEqTimer = setInterval(()=>{
+      lnEq.querySelectorAll('div').forEach(d=> d.style.height = (3+Math.random()*10)+'px');
+    }, 220);
+  }
+});
+let lnCommentSeconds = 0;
+const lnReplyTime = document.getElementById('ln-reply-time');
+lnCommentBtn.addEventListener('click', ()=>{
+  const isOpen = lnReplyRow.classList.toggle('is-open');
+  if(isOpen){
+    lnCommentSeconds = activePlaybackSeconds; // blocca il minutaggio nel momento in cui premi, come nella card
+    lnReplyTime.textContent = secToLabel(lnCommentSeconds);
+  }
+  lnCommentBtn.classList.toggle('is-active', isOpen);
+  requestAnimationFrame(()=> setIcon(lnCommentBtn, isOpen ? 'minus' : 'comment'));
+  if(isOpen) lnReplyInput.focus();
+});
+function sendLockscreenReply(){
+  const text = lnReplyInput.value.trim();
+  if(!text || !activePlaybackTrack) return;
+  addQuickComment(activePlaybackTrack, lnCommentSeconds, text);
+  lnReplyInput.value = '';
+  lnReplyRow.classList.remove('is-open');
+  lnCommentBtn.classList.remove('is-active');
+  setIcon(lnCommentBtn,'comment');
+}
+lnReplySend.addEventListener('click', sendLockscreenReply);
+lnReplyInput.addEventListener('keydown', (e)=>{ if(e.key === 'Enter') sendLockscreenReply(); });
+
+function goToNowPlayingTrack(){
+  if(!miniPlayerTrack || !miniPlayerCardEl) return;
+  const folder = findFolderForTrack(miniPlayerTrack.id);
+  if(folder) showFolder(folder);
+  setTimeout(()=>{
+    miniPlayerCardEl.scrollIntoView({behavior:'smooth', block:'center'});
+  }, 60);
+}
+miniTitle.addEventListener('click', goToNowPlayingTrack);
+lnTitleWrap.addEventListener('click', ()=>{
+  lockscreenClose.click();
+  goToNowPlayingTrack();
+});
+
+let activeOpenTrackCloser = null;
+/* riferimento globale a "chi sta suonando adesso", indipendente dalla cartella
+   attualmente visibile — una traccia lasciata in play in un'altra cartella non è
+   più nel DOM, quindi una ricerca fatta con querySelectorAll non la troverebbe */
+let stopCurrentPlayback = null;
+let isNowPlaying = false;
+/* stato globale: cosa sta suonando e a che secondo, per poter marcare correttamente
+   un commento "veloce" lasciato dalla mini-player o dalla simulazione di lock screen,
+   senza dover rientrare nella UI della traccia */
+let activePlaybackTrack = null;
+let activePlaybackSeconds = 0;
+/* ogni card registra qui un modo per ridisegnarsi se un commento viene aggiunto
+   dall'esterno (mini-player / lock screen) mentre magari non è nemmeno a schermo */
+const trackRefreshHooks = {};
+
+/* Stella a tre stati (vuota / mezza "interessante" / piena "preferita").
+   La mezza stella è ottenuta sovrapponendo la stella piena, tagliata a metà con
+   clip-path, sopra quella a contorno — niente id SVG condivisi che potrebbero
+   confliggere avendo molte tracce con la stessa icona in pagina. */
+function buildStarVisual(state){
+  const wrap = document.createElement('span');
+  wrap.style.cssText = 'position:relative; width:12px; height:12px; display:inline-block; flex-shrink:0;';
+  const outline = document.createElement('span');
+  outline.style.cssText = 'position:absolute; inset:0; display:flex;';
+  outline.innerHTML = ICON.star;
+  wrap.appendChild(outline);
+  if(state !== 'none'){
+    const filled = document.createElement('span');
+    const clip = state === 'half' ? 'inset(0 50% 0 0)' : 'inset(0 0 0 0)';
+    filled.style.cssText = 'position:absolute; inset:0; display:flex; clip-path:' + clip + ';';
+    filled.innerHTML = ICON.starFilled;
+    wrap.appendChild(filled);
+  }
+  return wrap;
+}
+
+/* ---------- costruzione della card di una traccia ---------- */
+function buildTrackCard(track){
+  const TOTAL = track.duration;
+  let comments = track.comments;
+  let current = null;
+  let previewExpanded = false;
+  let previewOpen = false;
+  let accordionOpen = false;
+  let playing = false;
+  let playTimer = null;
+  let pct = 0;
+  let listenAccumSeconds = 0;
+  let listenCountedThisSession = false;
+  let timeLocked = false;
+  let justAddedId = null;
+  let editingId = null;
+
+  const el = document.createElement('div');
+  el.className = 'track-card';
+  el.innerHTML = `
+    <div class="track-head">
+      <button class="play-btn" aria-label="Play"></button>
+      <p class="track-title"></p>
+      <button class="chip-btn" aria-label="Espandi commenti"></button>
+      <button class="add-btn" aria-label="Aggiungi commento"></button>
+      <span class="more-wrap">
+        <button class="more-btn" aria-label="Altre opzioni"></button>
+        <div class="track-dropdown"></div>
+      </span>
+    </div>
+    <div class="track-line">
+      <div class="eq-bg"></div>
+      <div class="rail"></div>
+      <div class="markers-layer"></div>
+      <div class="playhead" style="left:0%;"></div>
+    </div>
+    <div class="time-row-line">
+      <p class="time-label">0:00</p>
+      <span class="dl-indicator"></span>
+    </div>
+    <div class="preview-box">
+      <button class="nav-btn prev-c" aria-label="Commento precedente"></button>
+      <div class="preview-body">
+        <button class="preview-chip">
+          <span class="dot"></span>
+          <span class="preview-chip-name"></span>
+          <span class="preview-chip-time"></span>
+        </button>
+        <p class="preview-text"></p>
+      </div>
+      <button class="nav-btn next-c" aria-label="Commento successivo"></button>
+    </div>
+    <div class="add-box">
+      <textarea class="new-text" placeholder="Scrivi un commento..."></textarea>
+      <div class="actions">
+        <div class="time-row">
+          <input type="text" class="time-input" value="0:00">
+          <button type="button" class="time-lock-btn" aria-label="Sblocca il minutaggio"></button>
+        </div>
+        <div class="add-box-buttons">
+          <button class="btn-cancel">Annulla</button>
+          <button class="btn-save btn-primary">Salva</button>
+        </div>
+      </div>
+    </div>
+    <div class="all-comments"></div>
+  `;
+
+  const playBtn = el.querySelector('.play-btn');
+  const titleEl = el.querySelector('.track-title');
+  const moreBtn = el.querySelector('.more-btn');
+  const trackDropdown = el.querySelector('.track-dropdown');
+  const dlIndicator = el.querySelector('.dl-indicator');
+  const chipBtn = el.querySelector('.chip-btn');
+  const addBtn = el.querySelector('.add-btn');
+  const eqBg = el.querySelector('.eq-bg');
+  const trackLine = el.querySelector('.track-line');
+  const markersLayer = el.querySelector('.markers-layer');
+  const playhead = el.querySelector('.playhead');
+  const timeLabel = el.querySelector('.time-label');
+  const previewBox = el.querySelector('.preview-box');
+  const previewChip = el.querySelector('.preview-chip');
+  const previewChipName = el.querySelector('.preview-chip-name');
+  const previewChipTime = el.querySelector('.preview-chip-time');
+  const previewChipDot = el.querySelector('.preview-chip .dot');
+  const previewText = el.querySelector('.preview-text');
+  const addBox = el.querySelector('.add-box');
+  const timeInput = el.querySelector('.time-input');
+  const timeLockBtn = el.querySelector('.time-lock-btn');
+  const newText = el.querySelector('.new-text');
+  const saveBtn = el.querySelector('.btn-save');
+  const allComments = el.querySelector('.all-comments');
+
+  setIcon(playBtn,'play');
+  setIcon(moreBtn,'more');
+  setIcon(addBtn,'comment');
+  setIcon(el.querySelector('.prev-c'),'chevronLeft');
+  setIcon(el.querySelector('.next-c'),'chevronRight');
+
+  titleEl.innerHTML = '<span class="title-line"><span class="title-text"></span></span><span class="dur"><span class="dur-text"></span><button class="fav-btn" type="button"></button></span>';
+  const titleLine = titleEl.querySelector('.title-line');
+  const titleTextSpan = titleEl.querySelector('.title-text');
+  const durText = titleEl.querySelector('.dur-text');
+  const favBtn = titleEl.querySelector('.fav-btn');
+  titleTextSpan.textContent = track.title;
+  durText.textContent = secToLabel(TOTAL) + ' min';
+
+  function renderFav(){
+    favBtn.classList.toggle('is-active', track.myVote !== 'none');
+    favBtn.innerHTML = '';
+    favBtn.appendChild(buildStarVisual(track.myVote));
+    const score = track.fullCount + track.halfCount*0.5;
+    if(score > 0){
+      const countSpan = document.createElement('span');
+      countSpan.className = 'fav-count';
+      countSpan.textContent = (score % 1 === 0) ? score : score.toFixed(1);
+      favBtn.appendChild(countSpan);
+    }
+    const label = track.myVote === 'full'
+      ? 'Preferito — tocca per segnarlo solo come interessante'
+      : track.myVote === 'half'
+        ? 'Interessante — tocca per renderlo preferito'
+        : 'Tocca per segnarlo come interessante';
+    favBtn.setAttribute('aria-label', label);
+  }
+  renderFav();
+  favBtn.addEventListener('click', (e)=>{
+    e.stopPropagation();
+    // ciclo: vuota (nessun voto) -> mezza (interessante) -> piena (preferita) -> vuota
+    if(track.myVote === 'none'){
+      track.myVote = 'half';
+      track.halfCount += 1;
+    } else if(track.myVote === 'half'){
+      track.myVote = 'full';
+      track.halfCount = Math.max(0, track.halfCount - 1);
+      track.fullCount += 1;
+    } else {
+      track.myVote = 'none';
+      track.fullCount = Math.max(0, track.fullCount - 1);
+    }
+    renderFav();
+    if(sortMode === 'favorites') applySort(findFolderForTrack(track.id));
+  });
+
+  /* rinomina, link e audio di riferimento: tutto raggiungibile dal menu "..." in fondo
+     alla riga (Drive, Files, playlist Spotify usano lo stesso schema). Questi due ultimi
+     sono legati alla traccia intera, non a un minutaggio preciso come i commenti — la
+     posizione definitiva in cui mostrarli la rifiniamo più avanti; per ora bastano due
+     piccole icone accanto alla durata quando presenti.
+     Conflitti tra membri (nome/link/audio): vince l'ultima modifica salvata, come su
+     Drive/Dropbox con un file condiviso — per un gruppo così piccolo non serve altro. */
+  let renameInput = null;
+  function commitRename(){
+    if(!renameInput) return;
+    const val = renameInput.value.trim();
+    if(val) track.title = val;
+    titleTextSpan.textContent = track.title;
+    titleLine.querySelector('.rename-confirm')?.remove();
+    renameInput.replaceWith(titleTextSpan);
+    renameInput = null;
+  }
+  function startRename(){
+    if(renameInput) return;
+    renameInput = document.createElement('input');
+    renameInput.type = 'text';
+    renameInput.className = 'title-edit-input';
+    renameInput.value = track.title;
+    titleTextSpan.replaceWith(renameInput);
+    const confirmBtn = document.createElement('button');
+    confirmBtn.type = 'button';
+    confirmBtn.className = 'rename-confirm';
+    confirmBtn.setAttribute('aria-label','Conferma il nuovo nome');
+    setIcon(confirmBtn, 'check');
+    confirmBtn.addEventListener('click', (ev)=>{ ev.stopPropagation(); commitRename(); });
+    titleLine.appendChild(confirmBtn);
+    renameInput.focus();
+    const len = renameInput.value.length;
+    renameInput.setSelectionRange(len, len);
+    renameInput.addEventListener('blur', ()=> setTimeout(commitRename, 120));
+    renameInput.addEventListener('keydown', (ev)=>{ if(ev.key === 'Enter') renameInput.blur(); });
+    renameInput.addEventListener('click', (ev)=> ev.stopPropagation());
+  }
+
+  function renderDlIndicator(){
+    dlIndicator.classList.toggle('is-shown', track.downloaded);
+    dlIndicator.innerHTML = track.downloaded ? ICON.cloudDone : '';
+    dlIndicator.setAttribute('aria-label', track.downloaded ? 'Scaricata in locale' : '');
+  }
+  renderDlIndicator();
+  trackDlRefreshHooks[track.id] = renderDlIndicator;
+
+  function openLinkEditor(){
+    const val = prompt('Link per questa traccia (lascia vuoto per rimuoverlo):', track.trackLink || '');
+    if(val === null) return;
+    const trimmed = val.trim();
+    track.trackLink = trimmed ? (/^https?:\/\//i.test(trimmed) ? trimmed : 'https://' + trimmed) : null;
+    toast(track.trackLink ? 'Link salvato' : 'Link rimosso');
+  }
+
+  const trackAudioInput = document.createElement('input');
+  trackAudioInput.type = 'file';
+  trackAudioInput.accept = 'audio/*';
+  trackAudioInput.hidden = true;
+  el.appendChild(trackAudioInput);
+  trackAudioInput.addEventListener('change', ()=>{
+    const file = trackAudioInput.files && trackAudioInput.files[0];
+    if(!file) return;
+    if(track.trackAudioUrl) URL.revokeObjectURL(track.trackAudioUrl);
+    track.trackAudioUrl = URL.createObjectURL(file);
+    toast('Audio allegato alla traccia');
+    trackAudioInput.value = '';
+  });
+
+  function buildCardMenuItems(){
+    return [
+      {icon: track.downloaded ? 'cloudDone' : 'cloud', label: track.downloaded ? 'Rimuovi dal locale' : 'Scarica in locale', onClick: toggleDownload},
+      {icon:'edit', label:'Rinomina traccia', onClick: startRename},
+      {icon:'link', label: track.trackLink ? 'Modifica link' : 'Aggiungi link', onClick: openLinkEditor},
+      {icon:'mic', label: track.trackAudioUrl ? 'Sostituisci audio' : 'Aggiungi audio breve', onClick: ()=> trackAudioInput.click()},
+      {icon:'info', label:'Dettagli traccia', onClick: ()=> openTrackDetails(track, TOTAL)}
+    ];
+  }
+  function closeTrackDropdown(){
+    trackDropdown.classList.remove('is-open');
+    document.removeEventListener('click', outsideDropdownHandler, true);
+    if(activeOpenMenuCloser === closeTrackDropdown) activeOpenMenuCloser = null;
+  }
+  function outsideDropdownHandler(e){
+    if(!trackDropdown.contains(e.target) && !e.target.closest('.more-btn')) closeTrackDropdown();
+  }
+  moreBtn.addEventListener('click', (e)=>{
+    e.stopPropagation();
+    if(trackDropdown.classList.contains('is-open')){ closeTrackDropdown(); return; }
+    if(activeOpenMenuCloser) activeOpenMenuCloser();
+    trackDropdown.innerHTML = '';
+    buildCardMenuItems().forEach(it=>{
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.innerHTML = ICON[it.icon] + '<span>' + it.label + '</span>';
+      btn.addEventListener('click', (ev)=>{ ev.stopPropagation(); closeTrackDropdown(); it.onClick(); });
+      trackDropdown.appendChild(btn);
+    });
+    trackDropdown.classList.add('is-open');
+    activeOpenMenuCloser = closeTrackDropdown;
+    document.addEventListener('click', outsideDropdownHandler, true);
+  });
+
+  /* doppio tap sul nome: scorciatoia rapida per chi non vuole passare dal "..." */
+  titleTextSpan.addEventListener('dblclick', (e)=>{ e.preventDefault(); startRename(); });
+
+  /* equalizzatore di sfondo sulla timeline: sempre presente, altezza fissa, così
+     avviare/fermare il play non sposta mai nient'altro sotto */
+  const EQ_BARS = 36;
+  for(let i=0;i<EQ_BARS;i++){ const b=document.createElement('div'); b.className='bar'; eqBg.appendChild(b); }
+  let eqTimer = null;
+  function startEq(){
+    eqBg.classList.add('is-active');
+    clearInterval(eqTimer);
+    eqTimer = setInterval(()=>{
+      eqBg.querySelectorAll('.bar').forEach(b=> b.style.height = (2+Math.random()*15)+'px');
+    }, 200);
+  }
+  function stopEq(){
+    eqBg.classList.remove('is-active');
+    clearInterval(eqTimer);
+    eqBg.querySelectorAll('.bar').forEach(b=> b.style.height = '3px');
+  }
+
+  function updateChipLabel(){
+    const n = comments.length;
+    chipBtn.classList.toggle('is-active', accordionOpen);
+    requestAnimationFrame(()=>{
+      chipBtn.innerHTML = '';
+      const icon = document.createElement('span');
+      icon.style.display='flex';
+      setIcon(icon, accordionOpen ? 'chevronUp' : 'chevronDown');
+      chipBtn.appendChild(icon);
+      chipBtn.appendChild(document.createTextNode(n));
+    });
+  }
+
+  function setPct(p, opts){
+    opts = opts || {};
+    pct = Math.max(0, Math.min(100, p));
+    const inset = 1.1; // un rientro minimo, solo per non farlo toccare il bordo esatto
+    const visualPct = inset + (pct/100) * (100 - inset*2);
+    playhead.style.left = visualPct + '%';
+    const secs = (pct/100)*TOTAL;
+    timeLabel.textContent = secToLabel(secs);
+    if(!opts.keepInput && !timeLocked) timeInput.value = secToLabel(secs);
+    if(playing){
+      activePlaybackTrack = track;
+      activePlaybackSeconds = secs;
+      const mt = document.getElementById('mini-time');
+      if(mt) mt.textContent = secToLabel(secs);
+      if(lockscreenOverlay.classList.contains('show')) lnTime.textContent = secToLabel(secs);
+    }
+  }
+  function seekToSeconds(s){ setPct((s/TOTAL)*100); }
+
+  function notifyPlayStateChange(){
+    if(current !== null) renderPreview();
+    if(accordionOpen) renderAllComments();
+  }
+
+  function stopPlayback(){
+    playing = false;
+    clearInterval(playTimer);
+    el.classList.remove('is-playing');
+    stopEq();
+    requestAnimationFrame(()=> setIcon(playBtn,'play'));
+    playBtn.setAttribute('aria-label','Play');
+    notifyPlayStateChange();
+    if(stopCurrentPlayback === stopPlayback) stopCurrentPlayback = null;
+    if(miniPlayerTrack === track){ isNowPlaying = false; setMiniPlayerPlaying(false, el); }
+  }
+  function startPlayback(){
+    if(stopCurrentPlayback && stopCurrentPlayback !== stopPlayback) stopCurrentPlayback();
+    playing = true;
+    el.classList.add('is-playing');
+    startEq();
+    requestAnimationFrame(()=> setIcon(playBtn,'pause'));
+    playBtn.setAttribute('aria-label','Pausa');
+    clearInterval(playTimer);
+    playTimer = setInterval(()=>{
+      pct += (100 / TOTAL) * 0.25;
+      if(pct >= 100){
+        pct = 0;
+        listenAccumSeconds = 0;
+        listenCountedThisSession = false;
+      }
+      if(!listenCountedThisSession){
+        listenAccumSeconds += 0.25;
+        if(listenAccumSeconds >= 30){
+          listenCountedThisSession = true;
+          track.listenCount = (track.listenCount || 0) + 1;
+        }
+      }
+      if(!track.playBuckets) track.playBuckets = new Array(24).fill(0);
+      track.playBuckets[Math.min(23, Math.floor((pct/100)*24))] += 0.25;
+      setPct(pct);
+    }, 250);
+    isNowPlaying = true;
+    showMiniPlayer(track, el, ()=> playBtn.click());
+    setMiniPlayerPlaying(true, el);
+    notifyPlayStateChange();
+    stopCurrentPlayback = stopPlayback;
+  }
+
+  playBtn.addEventListener('click', ()=>{
+    if(playing){ stopPlayback(); }
+    else{ startPlayback(); }
+  });
+  trackPlaybackHooks[track.id] = {
+    seekAndPlay: (fractionPct)=>{ setPct(fractionPct); if(!playing) startPlayback(); },
+    stop: ()=>{ if(playing) stopPlayback(); },
+    isPlaying: ()=> playing
+  };
+
+  function toggleDownload(){
+    track.downloaded = !track.downloaded;
+    if(track.downloaded) track.downloadEvents = (track.downloadEvents || 0) + 1;
+    renderDlIndicator();
+    updateBulkDlButton();
+    toast(track.downloaded ? 'Traccia scaricata in locale' : 'Rimossa dal locale — tornerà in streaming');
+  }
+
+  function renderMarkers(){
+    markersLayer.innerHTML = '';
+    comments.forEach((c,i)=>{
+      const p = (c.time/TOTAL)*100;
+      const selected = i === current;
+      const b = document.createElement('button');
+      b.className = 'marker' + (c.id === justAddedId ? ' is-new' : '');
+      b.style.left = p+'%';
+      b.style.background = AVATAR_COLOR[c.author] || '#8A8578';
+      if(selected) b.style.boxShadow = '0 0 0 2px var(--surface-alt), 0 0 0 4.5px var(--accent)';
+      b.textContent = c.author;
+      b.setAttribute('aria-label', (selected?'Deseleziona':'Seleziona')+' commento di '+c.name+' al minuto '+secToLabel(c.time));
+      b.addEventListener('click', (e)=>{ e.stopPropagation(); toggleSelectMarker(i); });
+      markersLayer.appendChild(b);
+    });
+  }
+  trackRefreshHooks[track.id] = ()=>{
+    renderMarkers();
+    if(accordionOpen) renderAllComments();
+    if(current !== null) renderPreview();
+  };
+
+  function syncAddBtnState(){
+    const isOpen = addBox.style.display === 'flex';
+    addBtn.classList.toggle('is-active', isOpen);
+    requestAnimationFrame(()=> setIcon(addBtn, isOpen ? 'minus' : 'comment'));
+    addBtn.setAttribute('aria-label', isOpen ? 'Chiudi' : 'Aggiungi commento');
+  }
+
+  function closeEverything(){
+    if(previewOpen) closePreview();
+    if(accordionOpen) closeAccordion();
+    if(activeOpenTrackCloser === closeEverything) activeOpenTrackCloser = null;
+  }
+  function ensureThisTrackActive(){
+    if(activeOpenTrackCloser && activeOpenTrackCloser !== closeEverything) activeOpenTrackCloser();
+    activeOpenTrackCloser = closeEverything;
+  }
+
+  function openPreview(){
+    ensureThisTrackActive();
+    previewOpen = true;
+    if(addBox.style.display === 'flex'){ hardClose(addBox); syncAddBtnState(); }
+    if(previewBox.style.display !== 'flex') expandBlock(previewBox, renderPreview);
+    else renderPreview();
+  }
+  function closePreview(){
+    previewOpen = false;
+    current = null;
+    renderMarkers();
+    collapseBlock(previewBox);
+  }
+  function setTimeLockUI(){
+    if(timeLocked){
+      timeInput.readOnly = true;
+      requestAnimationFrame(()=> setIcon(timeLockBtn, 'lock'));
+      timeLockBtn.classList.remove('is-unlocked');
+      timeLockBtn.setAttribute('aria-label', 'Sblocca il minutaggio');
+    } else {
+      timeInput.readOnly = false;
+      requestAnimationFrame(()=> setIcon(timeLockBtn, 'unlock'));
+      timeLockBtn.classList.add('is-unlocked');
+      timeLockBtn.setAttribute('aria-label', 'Blocca il minutaggio su questo valore');
+    }
+  }
+  timeLockBtn.addEventListener('click', (e)=>{
+    e.stopPropagation();
+    timeLocked = !timeLocked;
+    if(!timeLocked) timeInput.value = timeLabel.textContent; // allinea subito al punto reale del cursore, anche se era stato solo trascinato a mano in pausa
+    setTimeLockUI();
+  });
+
+  function openAddBox(){
+    if(previewBox.style.display === 'flex') hardClose(previewBox);
+    previewOpen = false;
+    editingId = null;
+    saveBtn.textContent = 'Salva';
+    timeLocked = true;
+    timeLockBtn.classList.add('is-shown');
+    timeInput.value = timeLabel.textContent;
+    setTimeLockUI();
+    newText.value = '';
+    addBox.style.display = 'flex';
+    syncAddBtnState();
+    newText.focus();
+    setTimeout(()=>{
+      addBox.scrollIntoView({block:'center', behavior:'smooth'});
+    }, 350);
+  }
+  function openAddBoxForEdit(c){
+    if(previewBox.style.display === 'flex') hardClose(previewBox);
+    previewOpen = false;
+    editingId = c.id;
+    saveBtn.textContent = 'Modifica';
+    timeLocked = true;
+    timeLockBtn.classList.add('is-shown');
+    setTimeLockUI();
+    timeInput.value = secToLabel(c.time);
+    newText.value = c.text || '';
+    addBox.style.display = 'flex';
+    syncAddBtnState();
+    newText.focus();
+    setTimeout(()=>{
+      addBox.scrollIntoView({block:'center', behavior:'smooth'});
+    }, 350);
+  }
+  function closeAddBox(){
+    hardClose(addBox);
+    editingId = null;
+    timeLocked = false;
+    timeLockBtn.classList.remove('is-shown','is-unlocked');
+    timeInput.readOnly = false;
+    syncAddBtnState();
+    if(current !== null) openPreview();
+  }
+
+  /* tap su un marker della timeline: seleziona / deseleziona */
+  function toggleSelectMarker(i){
+    if(current === i){
+      current = null;
+      closePreview();
+    } else {
+      current = i;
+      renderMarkers();
+      openPreview();
+    }
+    renderMarkers();
+    if(accordionOpen) renderAllComments();
+  }
+
+  /* tap sul "minutaggio" (chip avatar+ora): seleziona, salta lì e (ri)avvia sempre la riproduzione da lì.
+     la pausa vive solo nel tasto play principale della traccia, mai nei commenti. */
+  function activateChip(i){
+    current = i;
+    seekToSeconds(comments[i].time);
+    renderMarkers();
+    openPreview();
+    if(accordionOpen) renderAllComments();
+    if(!playing) playBtn.click();
+  }
+
+  function fillCommentBody(container, c){
+    container.textContent = c.text;
+  }
+
+  function renderPreview(){
+    if(current === null) return;
+    const c = comments[current];
+    previewChipName.textContent = c.name + ' · ';
+    previewChipTime.innerHTML = '<span class="chip-time-text">' + secToLabel(c.time) + '</span>' + ICON.playTiny;
+    previewChipDot.style.background = AVATAR_COLOR[c.author] || '#8A8578';
+    previewChip.setAttribute('aria-label', 'Riproduci da questo punto ('+secToLabel(c.time)+')');
+    fillCommentBody(previewText, c);
+    previewText.classList.toggle('is-expanded', previewExpanded);
+  }
+  previewChip.addEventListener('click', ()=> activateChip(current));
+  previewText.addEventListener('click', ()=>{ previewExpanded = !previewExpanded; renderPreview(); });
+
+  el.querySelector('.prev-c').addEventListener('click', ()=>{
+    if(comments.length===0) return;
+    const base = current===null ? 0 : current;
+    current = (base - 1 + comments.length) % comments.length;
+    renderMarkers();
+    openPreview();
+    if(accordionOpen) renderAllComments();
+  });
+  el.querySelector('.next-c').addEventListener('click', ()=>{
+    if(comments.length===0) return;
+    const base = current===null ? -1 : current;
+    current = (base + 1) % comments.length;
+    renderMarkers();
+    openPreview();
+    if(accordionOpen) renderAllComments();
+  });
+
+  addBtn.addEventListener('click', ()=>{
+    if(addBox.style.display === 'flex') closeAddBox();
+    else openAddBox();
+  });
+  el.querySelector('.btn-cancel').addEventListener('click', closeAddBox);
+  saveBtn.addEventListener('click', ()=>{
+    const text = newText.value.trim();
+    if(!text){ newText.focus(); return; }
+    const time = Math.max(0, Math.min(TOTAL, labelToSec(timeInput.value)));
+
+    if(editingId !== null){
+      const idx = comments.findIndex(cm => cm.id === editingId);
+      if(idx === -1){ closeAddBox(); return; }
+      const existing = comments[idx];
+      existing.text = text;
+      existing.time = time;
+      comments.sort((a,b)=>a.time-b.time);
+      current = comments.indexOf(existing);
+      previewExpanded = false;
+      justAddedId = existing.id;
+      closeAddBox();
+      renderMarkers();
+      openPreview();
+      renderAllComments();
+      justAddedId = null;
+      toast('Commento aggiornato');
+    } else {
+      const newComment = {id:nextCommentId++, author:ME, name:'Tu', time:time, text:text};
+      comments.push(newComment);
+      comments.sort((a,b)=>a.time-b.time);
+      current = comments.indexOf(newComment);
+      previewExpanded = false;
+      justAddedId = newComment.id;
+      closeAddBox();
+      renderMarkers();
+      openPreview();
+      renderAllComments();
+      justAddedId = null;
+      toast('Commento salvato');
+    }
+  });
+
+  function deleteComment(i){
+    comments.splice(i,1);
+    if(current === i){ current = null; closePreview(); }
+    else if(current !== null && current > i) current -= 1;
+    renderMarkers();
+    if(current !== null) renderPreview();
+    renderAllComments();
+    toast('Commento eliminato');
+  }
+
+  function renderAllComments(){
+    allComments.innerHTML = '';
+    if(comments.length === 0){
+      const p = document.createElement('p');
+      p.className = 'empty-comments';
+      p.textContent = 'Nessun commento su questa traccia — sii il primo a lasciarne uno.';
+      allComments.appendChild(p);
+      return;
+    }
+    comments.forEach((c,i)=>{
+      const selected = i === current;
+      const row = document.createElement('div');
+      row.className = 'comment-row' + (selected ? ' is-selected' : '');
+      const chip = document.createElement('button');
+      chip.className = 'comment-chip';
+      chip.setAttribute('aria-label', 'Vai al minuto '+secToLabel(c.time)+' e riproduci');
+      const av = document.createElement('div');
+      av.className = 'avatar';
+      av.style.background = AVATAR_COLOR[c.author] || '#8A8578';
+      av.textContent = c.author;
+      const ts = document.createElement('span');
+      ts.className = 'comment-time';
+      ts.innerHTML = '<span class="chip-time-text">' + secToLabel(c.time) + '</span>' + ICON.playTiny;
+      chip.appendChild(av); chip.appendChild(ts);
+      chip.addEventListener('click', ()=> activateChip(i));
+      const txt = document.createElement('div');
+      txt.className = 'comment-text';
+      fillCommentBody(txt, c);
+      txt.addEventListener('click', ()=>{
+        if(current === i){
+          if(!previewExpanded){
+            previewExpanded = true;
+            renderPreview();
+          } else {
+            previewExpanded = false;
+            closePreview();
+            renderAllComments();
+          }
+        } else {
+          current = i;
+          renderMarkers();
+          openPreview();
+          renderAllComments();
+        }
+      });
+      row.appendChild(chip);
+      row.appendChild(txt);
+      if(c.author === ME){
+        const actions = document.createElement('div');
+        actions.className = 'comment-actions';
+        const editBtn = document.createElement('button');
+        editBtn.className = 'comment-action-btn comment-edit';
+        setIcon(editBtn,'edit');
+        editBtn.setAttribute('aria-label','Modifica il tuo commento');
+        editBtn.addEventListener('click', (e)=>{
+          e.stopPropagation();
+          openAddBoxForEdit(c);
+        });
+        actions.appendChild(editBtn);
+        const del = document.createElement('button');
+        del.className = 'comment-action-btn comment-del';
+        setIcon(del,'trash');
+        del.setAttribute('aria-label','Elimina il tuo commento');
+        del.addEventListener('click', (e)=>{
+          e.stopPropagation();
+          askConfirmDelete(()=> deleteComment(i));
+        });
+        actions.appendChild(del);
+        row.appendChild(actions);
+      }
+      allComments.appendChild(row);
+    });
+  }
+
+  function closeAccordion(){
+    if(!accordionOpen) return;
+    accordionOpen = false;
+    updateChipLabel();
+    collapseBlock(allComments);
+  }
+  chipBtn.addEventListener('click', ()=>{
+    if(accordionOpen){
+      closeAccordion();
+      return;
+    }
+    ensureThisTrackActive();
+    accordionOpen = true;
+    updateChipLabel();
+    expandBlock(allComments, renderAllComments);
+  });
+
+  let dragging = false;
+  playhead.addEventListener('pointerdown', (e)=>{
+    dragging = true;
+    playhead.setPointerCapture(e.pointerId);
+    playhead.classList.add('is-dragging');
+  });
+  playhead.addEventListener('pointermove', (e)=>{
+    if(!dragging) return;
+    const r = trackLine.getBoundingClientRect();
+    setPct(((e.clientX - r.left) / r.width) * 100);
+  });
+  playhead.addEventListener('pointerup', ()=>{ dragging = false; playhead.classList.remove('is-dragging'); });
+  playhead.addEventListener('pointercancel', ()=>{ dragging = false; playhead.classList.remove('is-dragging'); });
+
+  renderMarkers();
+  updateChipLabel();
+  setPct(0);
+
+  return el;
+}
+
+/* ============================================================
+   GATE — creazione / recupero account, senza password
+   ============================================================ */
+const gateView = document.getElementById('gate-view');
+const accountBtn = document.getElementById('account-btn');
+
+function showGate(){
+  gateView.hidden = false;
+  homeView.hidden = true;
+  trackView.hidden = true;
+  accountBtn.hidden = true;
+  backBtn.hidden = true;
+  topbarTitle.innerHTML = 'Le tue prove<span class="badge-proto">prototipo</span>';
+  renderGate();
+}
+
+function renderGate(){
+  gateView.innerHTML = `
+    <div class="gate-wrap">
+      <p class="gate-title">Ciao!</p>
+      <p class="gate-sub">Nessuna password: scegli come iniziare.</p>
+      <div class="gate-option" id="opt-create">
+        <button type="button" class="gate-option-head">
+          <span>Crea nuovo account</span><span class="chev"></span>
+        </button>
+        <div class="gate-option-body"><div class="gate-option-inner"><div class="gate-option-content">
+          <input type="text" id="create-name" placeholder="Il tuo nome">
+          <p class="palette-label">Scegli un colore</p>
+          <div class="palette" id="create-palette"></div>
+          <p class="field-error" id="create-error" hidden></p>
+          <div class="gate-action-row">
+            <button type="button" class="gate-action-btn" id="create-confirm">Crea account →</button>
+          </div>
+        </div></div></div>
+      </div>
+      <div class="gate-option" id="opt-recover">
+        <button type="button" class="gate-option-head">
+          <span>Ho già un account</span><span class="chev"></span>
+        </button>
+        <div class="gate-option-body"><div class="gate-option-inner"><div class="gate-option-content">
+          <div id="recover-list"></div>
+        </div></div></div>
+      </div>
+    </div>
+  `;
+  gateView.querySelectorAll('.chev').forEach(c=> setIcon(c,'chevronRightSmall'));
+
+  const optCreate = document.getElementById('opt-create');
+  const optRecover = document.getElementById('opt-recover');
+  function toggle(target, other){
+    const opening = !target.classList.contains('expanded');
+    other.classList.remove('expanded');
+    target.classList.toggle('expanded', opening);
+  }
+  optCreate.querySelector('.gate-option-head').addEventListener('click', ()=> toggle(optCreate, optRecover));
+  optRecover.querySelector('.gate-option-head').addEventListener('click', ()=>{
+    toggle(optRecover, optCreate);
+    if(optRecover.classList.contains('expanded')) renderRecoverList();
+  });
+
+  let selectedColor = null;
+  const paletteEl = document.getElementById('create-palette');
+  PALETTE.forEach(key=>{
+    const sw = document.createElement('button');
+    sw.type='button'; sw.className='swatch'; sw.style.background = `var(--palette-${key})`;
+    sw.addEventListener('click', ()=>{
+      selectedColor = key;
+      paletteEl.querySelectorAll('.swatch').forEach(s=>s.classList.remove('selected'));
+      sw.classList.add('selected');
+    });
+    paletteEl.appendChild(sw);
+  });
+
+  const nameInput = document.getElementById('create-name');
+  const errorEl = document.getElementById('create-error');
+  document.getElementById('create-confirm').addEventListener('click', ()=>{
+    const nome = nameInput.value.trim();
+    errorEl.hidden = true;
+    if(!nome){ errorEl.textContent='Scrivi un nome.'; errorEl.hidden=false; return; }
+    if(!selectedColor){ errorEl.textContent='Scegli un colore.'; errorEl.hidden=false; return; }
+    const norm = normalizeName(nome);
+    if(cloud.utenti[norm]){
+      errorEl.textContent = 'Questo nome esiste già nel gruppo. Usa "Ho già un account" per recuperarlo.';
+      errorEl.hidden = false;
+      return;
+    }
+    const identity = { uid: uid(), nome, colore: selectedColor, createdAt: Date.now(), cartelleCollegate: [] };
+    cloud.utenti[norm] = identity;
+    saveCloud();
+    device.identity = { uid: identity.uid, nome: identity.nome, colore: identity.colore, norm };
+    device.linked = [];
+    saveDevice();
+    toast(`Benvenuto, ${nome}!`);
+    showHome();
+  });
+}
+
+function renderRecoverList(){
+  const list = document.getElementById('recover-list');
+  const entries = Object.values(cloud.utenti);
+  if(entries.length === 0){
+    list.innerHTML = `<p class="recover-empty">Nessun account ancora. Creane uno dal riquadro sopra.</p>`;
+    return;
+  }
+  list.innerHTML = '';
+  let selectedBtn = null;
+  entries.forEach(u=>{
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex; align-items:center; border-radius:var(--radius-sm); transition:background .15s;';
+    const btn = document.createElement('button');
+    btn.type='button'; btn.className='recover-item'; btn.style.flex='1';
+    btn.innerHTML = `<span class="recover-dot" style="background:var(--palette-${u.colore})">${u.nome.trim()[0].toUpperCase()}</span><span>${u.nome}</span>`;
+    const enterBtn = document.createElement('button');
+    enterBtn.type='button'; enterBtn.className='gate-action-btn';
+    enterBtn.textContent='Entra →';
+    enterBtn.style.cssText='display:none; margin-right:6px; flex-shrink:0;';
+    btn.addEventListener('click', ()=>{
+      /* deseleziona il precedente */
+      if(selectedBtn && selectedBtn !== btn){
+        selectedBtn.closest('div').style.background='';
+        selectedBtn.closest('div').querySelector('.gate-action-btn').style.display='none';
+      }
+      const isAlreadySelected = selectedBtn === btn;
+      if(isAlreadySelected){
+        row.style.background='';
+        enterBtn.style.display='none';
+        selectedBtn=null;
+      } else {
+        row.style.background='var(--surface-alt)';
+        enterBtn.style.display='';
+        selectedBtn=btn;
+      }
+    });
+    enterBtn.addEventListener('click', ()=>{
+      const norm = normalizeName(u.nome);
+      device.identity = { uid:u.uid, nome:u.nome, colore:u.colore, norm };
+      device.linked = (u.cartelleCollegate || []).slice();
+      saveDevice();
+      toast(`Bentornato, ${u.nome}!`);
+      showHome();
+    });
+    row.appendChild(btn);
+    row.appendChild(enterBtn);
+    list.appendChild(row);
+  });
+}
+
+/* ============================================================
+   ACCOUNT BUTTON + SHEET
+   ============================================================ */
+function renderAccountButton(){
+  if(!device.identity) return;
+  const letter = device.identity.nome.trim()[0].toUpperCase();
+  const color = `var(--palette-${device.identity.colore})`;
+  accountBtn.innerHTML = `<span class="account-dot" style="background:${color}">${letter}</span>`;
+}
+accountBtn.addEventListener('click', openAccountSheet);
+
+const accountOverlay = document.getElementById('account-overlay');
+let closeActiveRowConfirm = null;
+
+function openAccountSheet(){
+  if(!device.identity) return;
+  document.getElementById('account-avatar-big').style.background = `var(--palette-${device.identity.colore})`;
+  document.getElementById('account-avatar-big').textContent = device.identity.nome.trim()[0].toUpperCase();
+  document.getElementById('account-name-label').textContent = device.identity.nome;
+  setIcon(document.getElementById('account-sheet-close'), 'x');
+  renderAccountFolderList();
+  accountOverlay.classList.add('show');
+}
+function closeAccountSheet(){
+  accountOverlay.classList.remove('show');
+  closeActiveRowConfirm = null;
+}
+document.getElementById('account-sheet-close').addEventListener('click', closeAccountSheet);
+accountOverlay.addEventListener('click', e=>{ if(e.target === accountOverlay) closeAccountSheet(); });
+
+function renderAccountFolderList(){
+  const listEl = document.getElementById('account-folder-list');
+  listEl.innerHTML = '';
+  closeActiveRowConfirm = null;
+  /* solo le cartelle collegate dall'utente via link Mega */
+  const linked = device.linked
+    .map(id=>{ const cf = cloud.cartelle[id]; return cf ? { nome: cf.nome, id } : null; })
+    .filter(Boolean);
+  if(linked.length === 0){
+    listEl.innerHTML = `<p class="acc-folder-empty">Nessuna cartella collegata.</p>`;
+    return;
+  }
+  linked.forEach(item=>{
+    const row = document.createElement('div');
+    row.className = 'acc-folder-row';
+    row.innerHTML = `<span class="acc-folder-name"></span><div class="acc-folder-actions"></div>`;
+    row.querySelector('.acc-folder-name').textContent = item.nome;
+    row.querySelector('.acc-folder-actions').appendChild(buildRemoveBtn(item.id, item.nome, listEl));
+    listEl.appendChild(row);
+  });
+}
+
+function buildRemoveBtn(cartellaId, nome, listEl){
+  const trashBtn = document.createElement('button');
+  trashBtn.type='button'; trashBtn.className='row-action row-trash';
+  trashBtn.setAttribute('aria-label','Rimuovi collegamento');
+  setIcon(trashBtn,'trash');
+  let confirmBtn = null, revertTimer = null;
+
+  function exitConfirm(){
+    clearTimeout(revertTimer);
+    if(confirmBtn){ confirmBtn.remove(); confirmBtn = null; }
+    trashBtn.classList.remove('is-cancel');
+    setIcon(trashBtn,'trash');
+    trashBtn.setAttribute('aria-label','Rimuovi collegamento');
+    if(closeActiveRowConfirm === exitConfirm) closeActiveRowConfirm = null;
+  }
+  function enterConfirm(){
+    if(closeActiveRowConfirm) closeActiveRowConfirm();
+    trashBtn.classList.add('is-cancel');
+    setIcon(trashBtn,'x');
+    trashBtn.setAttribute('aria-label','Annulla rimozione');
+    confirmBtn = document.createElement('button');
+    confirmBtn.type='button'; confirmBtn.className='row-action row-confirm';
+    confirmBtn.setAttribute('aria-label','Conferma rimozione');
+    setIcon(confirmBtn,'check');
+    confirmBtn.addEventListener('click', ()=>{
+      clearTimeout(revertTimer);
+      device.linked = device.linked.filter(id=>id !== cartellaId);
+      saveDevice(); syncLinkedToCloudUser();
+      toast(`Collegamento a "${nome}" rimosso.`);
+      renderAccountFolderList();
+      renderHome();
+    });
+    trashBtn.parentElement.insertBefore(confirmBtn, trashBtn);
+    revertTimer = setTimeout(exitConfirm, 4000);
+    closeActiveRowConfirm = exitConfirm;
+  }
+  trashBtn.addEventListener('click', ()=>{ if(confirmBtn) exitConfirm(); else enterConfirm(); });
+  return trashBtn;
+}
+
+/* genera tracce placeholder per cartelle Mega appena collegate,
+   identiche nella struttura dati alle tracce hardcoded */
+function generateFakeTracks(folderId, count){
+  const names = ['Take 1','Idea riff','Strofa base','Ritornello','Outro','Jam libera','Intro','Ponte','Take 2','Groove'];
+  const result = [];
+  for(let i = 0; i < count; i++){
+    result.push({
+      id: folderId + '_t' + i,
+      title: names[i % names.length],
+      duration: 80 + Math.floor(Math.random() * 200),
+      downloaded: false,
+      myVote: 'none',
+      fullCount: 0,
+      halfCount: 0,
+      listenCount: 0,
+      comments: []
+    });
+  }
+  return result;
+}
+
+/* ============================================================
+   MEGA FOLDER CARD — cartella collegata via link Mega.
+   Visivamente e funzionalmente identica alle card hardcoded:
+   stessa struttura HTML, stesso showFolder(), stesso scale al tap.
+   In più: doppio tap sul nome → rinomina inline (stessa logica
+   di buildTrackCard).
+   ============================================================ */
+function buildMegaFolderCard(id, f, autoRename){
+  /* tracce fake: stessa struttura dati delle hardcoded, già pronte
+     per buildTrackCard — in produzione arriveranno da Mega */
+  const trackCount = f.numTracce > 0 ? f.numTracce : (2 + Math.floor(Math.random()*4));
+  const fakeFolder = {
+    id,
+    name: f.nome,
+    tracks: generateFakeTracks(id, trackCount)
+  };
+
+  const card = document.createElement('div');
+  card.className = 'folder-card mega-folder-card';
+  card.innerHTML = `
+    <div class="folder-icon"></div>
+    <div class="folder-meta" style="flex:1; min-width:0;">
+      <div class="mega-folder-name-wrap" style="display:flex; align-items:center; gap:4px;">
+        <p class="name" style="font-size:14.5px; font-weight:600; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></p>
+      </div>
+      <p class="sub" style="font-size:12px; color:var(--text-muted); margin-top:1px;"></p>
+    </div>
+    <div style="color:var(--text-muted); flex-shrink:0;"></div>
+  `;
+  setIcon(card.querySelector('.folder-icon'), 'folder');
+  setIcon(card.querySelector('div:last-child'), 'chevronRightSmall');
+
+  const nameWrap = card.querySelector('.mega-folder-name-wrap');
+  const nameEl = card.querySelector('.name');
+  const subEl = card.querySelector('.sub');
+  nameEl.textContent = f.nome;
+  subEl.textContent = trackCount + (trackCount === 1 ? ' traccia' : ' tracce');
+
+  let renameInput = null;
+
+  function commitRename(){
+    if(!renameInput) return;
+    const val = renameInput.value.trim();
+    if(val){ f.nome = val; fakeFolder.name = val; saveCloud(); }
+    nameEl.textContent = f.nome;
+    nameWrap.querySelector('.rename-confirm')?.remove();
+    renameInput.replaceWith(nameEl);
+    renameInput = null;
+  }
+
+  function startRename(){
+    if(renameInput) return;
+    renameInput = document.createElement('input');
+    renameInput.type = 'text';
+    renameInput.className = 'mega-folder-name-input';
+    renameInput.value = f.nome;
+    nameEl.replaceWith(renameInput);
+    const confirmBtn = document.createElement('button');
+    confirmBtn.type = 'button';
+    confirmBtn.className = 'rename-confirm';
+    confirmBtn.setAttribute('aria-label', 'Conferma nome');
+    setIcon(confirmBtn, 'check');
+    confirmBtn.addEventListener('click', (e)=>{ e.stopPropagation(); commitRename(); });
+    nameWrap.appendChild(confirmBtn);
+    renameInput.focus();
+    renameInput.select();
+    renameInput.addEventListener('blur', ()=> setTimeout(commitRename, 120));
+    renameInput.addEventListener('keydown', (e)=>{ if(e.key==='Enter') renameInput.blur(); });
+    renameInput.addEventListener('click', (e)=> e.stopPropagation());
+  }
+
+  /* doppio tap sul nome → rinomina */
+  nameEl.style.cursor = 'default';
+  nameEl.addEventListener('dblclick', (e)=>{ e.preventDefault(); e.stopPropagation(); startRename(); });
+
+  /* click sulla card → entra nella cartella, identico alle card reali */
+  card.addEventListener('click', ()=>{
+    if(renameInput) return;
+    showFolder(fakeFolder);
+  });
+
+  if(autoRename) setTimeout(startRename, 80);
+
+  return card;
+}
+
+/* ============================================================
+   GHOST CARD — collega una cartella Mega
+   ============================================================ */
+function buildGhostCard(){
+  const card = document.createElement('div');
+  card.className = 'folder-card ghost-card';
+  card.dataset.step = 'link';
+  card.innerHTML = `
+    <button type="button" class="ghost-head">
+      <span class="ghost-icon"></span>
+      <span class="ghost-meta">
+        <span class="ghost-label">Collega un link Mega</span>
+        <span class="ghost-sublabel">Aggiungi una cartella al gruppo</span>
+      </span>
+      <span class="ghost-chev"></span>
+    </button>
+    <div class="ghost-body"><div class="ghost-body-inner"><div class="ghost-body-content">
+      <div class="ghost-input-row">
+        <input type="url" id="ghost-link-input" placeholder="Incolla il link Mega…">
+        <button type="button" class="ghost-icon-btn" id="ghost-cancel-btn" aria-label="Annulla"></button>
+        <button type="button" class="ghost-icon-btn ghost-confirm" id="ghost-confirm-btn" aria-label="Collega"></button>
+      </div>
+      <p class="field-error" id="ghost-error" hidden></p>
+      <p class="ghost-demo-hint">Per provare incolla uno di questi link demo:<br><code>https://mega.nz/folder/DEMO_F1#key</code><br><code>https://mega.nz/folder/DEMO_F2#key</code><br><code>https://mega.nz/folder/DEMO_F3#key</code></p>
+    </div></div></div>
+  `;
+  setIcon(card.querySelector('.ghost-icon'), 'link');
+  const ghostChev = card.querySelector('.ghost-chev');
+  setIcon(ghostChev, 'chevronDown');
+
+  const linkInput = card.querySelector('#ghost-link-input');
+  const errorEl = card.querySelector('#ghost-error');
+  const cancelBtn = card.querySelector('#ghost-cancel-btn');
+  const confirmBtn = card.querySelector('#ghost-confirm-btn');
+  const ghostBody = card.querySelector('.ghost-body');
+
+  setIcon(cancelBtn, 'x');
+  setIcon(confirmBtn, 'check');
+
+  function resetGhost(){
+    linkInput.value = '';
+    errorEl.hidden = true;
+  }
+  function collapse(){
+    collapseBlock(ghostBody);
+    setIcon(ghostChev, 'chevronDown');
+    setTimeout(resetGhost, 260);
+  }
+
+  card.querySelector('.ghost-head').addEventListener('click', ()=>{
+    if(ghostBody.style.display === 'flex'){
+      collapseBlock(ghostBody);
+      setIcon(ghostChev, 'chevronDown');
+    } else {
+      expandBlock(ghostBody);
+      setIcon(ghostChev, 'chevronUp');
+      setTimeout(()=> linkInput.focus(), 50);
+    }
+  });
+
+  cancelBtn.addEventListener('click', ()=> collapse());
+
+  confirmBtn.addEventListener('click', ()=>{
+    errorEl.hidden = true;
+    const link = linkInput.value.trim();
+    const folderId = parseFolderId(link);
+    if(!folderId){
+      errorEl.textContent = 'Non sembra un link di cartella Mega valido.';
+      errorEl.hidden = false; return;
+    }
+    if(device.linked.includes(folderId)){
+      toast('Questa cartella è già collegata.'); collapse(); return;
+    }
+    /* crea in cloud se nuova, altrimenti usa quella esistente */
+    if(!cloud.cartelle[folderId]){
+      cloud.cartelle[folderId] = {
+        nome: suggestFolderName(folderId), megaLink: link, megaFolderId: folderId,
+        creatoDa: device.identity ? device.identity.uid : 'anon',
+        ultimaSync: Date.now(), numTracce: 0
+      };
+      saveCloud();
+    }
+    device.linked.push(folderId);
+    saveDevice(); syncLinkedToCloudUser();
+    collapse();
+    /* renderHome con autoRename: la nuova card compare già in modalità rinomina */
+    renderHome(folderId);
+  });
+
+  linkInput.addEventListener('keydown', e=>{ if(e.key==='Enter') confirmBtn.click(); });
+
+  return card;
+}
+
+/* ============================================================
+   DEV TOOLS (reset dispositivo / cloud per i test)
+   ============================================================ */
+document.getElementById('dev-reset-device').addEventListener('click', ()=>{
+  device = { identity:null, linked:[] };
+  saveDevice();
+  closeAccountSheet();
+  showGate();
+  toast('Dispositivo reimpostato (il cloud e le cartelle restano — recupera il tuo account per ritrovarle).');
+});
+document.getElementById('dev-reset-cloud').addEventListener('click', ()=>{
+  localStorage.removeItem(CLOUD_KEY);
+  localStorage.removeItem(DEVICE_KEY);
+  cloud = loadCloud();
+  device = loadDevice();
+  closeAccountSheet();
+  showGate();
+  toast('Cloud simulato svuotato completamente.');
+});
+
+if(device.identity){ showHome(); } else { showGate(); }
+</script>
+</body>
+</html>

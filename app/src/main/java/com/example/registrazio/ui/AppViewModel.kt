@@ -12,6 +12,7 @@ import com.example.registrazio.data.remote.EsitoElenco
 import com.example.registrazio.data.remote.LinkMega
 import com.example.registrazio.data.remote.MegaApi
 import com.example.registrazio.data.remote.MegaException
+import com.example.registrazio.data.remote.ScaricatoreMega
 import com.example.registrazio.data.model.Cartella
 import com.example.registrazio.data.model.Commento
 import com.example.registrazio.data.model.StatoSync
@@ -34,6 +35,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import java.io.File
 import java.util.UUID
 
 sealed interface Schermata {
@@ -85,7 +87,14 @@ data class AppState(
     val messaggio: Messaggio? = null,
     val collegamento: StatoCollegamento = StatoCollegamento(),
     /** Quante righe aspettano di finire su Firestore: è il badge del tasto Sincronizza. */
-    val pendenti: ConteggioPendenti = ConteggioPendenti(0, 0, 0)
+    val pendenti: ConteggioPendenti = ConteggioPendenti(0, 0, 0),
+    /**
+     * Avanzamento dei download in corso, da 0 a 1, per id traccia.
+     *
+     * Qui c'è una percentuale vera — byte scaricati sul totale — a differenza
+     * della lettura di una cartella, che è una chiamata sola e non si misura.
+     */
+    val scaricamenti: Map<String, Float> = emptyMap()
 )
 
 /**
@@ -141,6 +150,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val profiliStore = ProfiliStore(app)
     private val archivio = ArchivioLocale(app)
     private val megaApi = MegaApi()
+    private val scaricatore = ScaricatoreMega(megaApi)
+
+    /** File audio già sul telefono, per id traccia. */
+    private val fileLocali = mutableMapOf<String, File>()
+    private val jobDownload = mutableMapOf<String, Job>()
 
     /**
      * Scope a parte per le scritture su disco.
@@ -221,6 +235,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             val cartelle = archivio.cartelle()
             val tracce = archivio.tracce()
             chiaviFile.putAll(archivio.chiaviFile())
+            fileLocali.putAll(archivio.download())
             val conteggio = archivio.pendenti()
             _state.update {
                 it.copy(
@@ -442,6 +457,22 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      */
     private fun avviaDaMega(traccia: Traccia, da: Float) {
         playJob = viewModelScope.launch {
+            // Se il file è già sul telefono si suona da lì: nessuna attesa, e
+            // funziona anche senza rete. Il ramo locale non decifra niente —
+            // su disco il file è già in chiaro.
+            fileLocali[traccia.id]?.let { file ->
+                if (file.exists()) {
+                    player.riproduciFile(file, da)
+                    tracciaCaricata = traccia.id
+                    seguiPosizione(traccia.id)
+                    return@launch
+                }
+                // Sparito da sotto i piedi: si torna in streaming.
+                fileLocali.remove(traccia.id)
+                salva { archivio.rimuoviDownload(traccia.id) }
+                aggiornaTraccia(traccia.id) { it.copy(scaricata = false) }
+            }
+
             val chiave = chiaviFile[traccia.id]
             val link = _state.value.cartelle
                 .find { it.id == traccia.cartellaId }
@@ -647,18 +678,88 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     // ---------- download ----------
 
     fun cambiaDownload(tracciaId: String) {
-        val scaricataOra = !(traccia(tracciaId)?.scaricata ?: return)
-        aggiornaTraccia(tracciaId) {
-            it.copy(
-                scaricata = scaricataOra,
-                downloadEvents = it.downloadEvents + if (scaricataOra) 1 else 0
-            )
+        val traccia = traccia(tracciaId) ?: return
+
+        // Toccare mentre scarica annulla: è l'unico modo per fermarsi, e il
+        // file a metà viene buttato dallo scaricatore.
+        jobDownload.remove(tracciaId)?.let {
+            it.cancel()
+            _state.update { s -> s.copy(scaricamenti = s.scaricamenti - tracciaId) }
+            mostra("Download annullato")
+            return
         }
-        mostra(
-            if (scaricataOra) "Traccia scaricata in locale"
-            else "Rimossa dal locale — tornerà in streaming"
-        )
+
+        if (traccia.scaricata) {
+            fileLocali.remove(tracciaId)
+            salva { archivio.rimuoviDownload(tracciaId) }
+            aggiornaTraccia(tracciaId) { it.copy(scaricata = false) }
+            mostra("Rimossa dal telefono — tornerà in streaming")
+            return
+        }
+
+        if (!traccia.daMega) return
+        avviaDownload(traccia)
     }
+
+    private fun avviaDownload(traccia: Traccia) {
+        jobDownload[traccia.id] = viewModelScope.launch {
+            val errore = scaricaUna(traccia)
+            if (errore == null) mostra("\"${traccia.titolo}\" è sul telefono")
+            else mostra(errore)
+        }
+    }
+
+    /**
+     * Scarica una traccia e la registra. Restituisce `null` se è andata bene,
+     * altrimenti il messaggio da mostrare.
+     *
+     * Usata sia dal singolo tasto sia da "Scarica tutte", che però annuncia il
+     * risultato una volta sola alla fine invece che a ogni traccia.
+     */
+    private suspend fun scaricaUna(traccia: Traccia): String? {
+        if (!traccia.daMega) return null
+
+        val chiave = chiaviFile[traccia.id]
+        val link = _state.value.cartelle
+            .find { it.id == traccia.cartellaId }
+            ?.linkMega
+            ?.let { LinkMega.parse(it) }
+
+        if (chiave == null || link == null) {
+            return "Ricollega la cartella per poter scaricare questa traccia"
+        }
+
+        _state.update { it.copy(scaricamenti = it.scaricamenti + (traccia.id to 0f)) }
+        val destinazione = File(cartellaAudio(), "${traccia.id}.audio")
+
+        return try {
+            scaricatore.scarica(link, traccia.idFileMega, chiave, destinazione) { frazione ->
+                _state.update { it.copy(scaricamenti = it.scaricamenti + (traccia.id to frazione)) }
+            }
+            fileLocali[traccia.id] = destinazione
+            salva { archivio.registraDownload(traccia.id, destinazione) }
+            aggiornaTraccia(traccia.id) {
+                it.copy(scaricata = true, downloadEvents = it.downloadEvents + 1)
+            }
+            null
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            // L'ha già annunciato chi l'ha chiesto: ripeterlo sarebbe rumore.
+            throw e
+        } catch (e: Throwable) {
+            (e as? MegaException)?.message ?: "Download non riuscito."
+        } finally {
+            jobDownload.remove(traccia.id)
+            _state.update { it.copy(scaricamenti = it.scaricamenti - traccia.id) }
+        }
+    }
+
+    /**
+     * `cacheDir` e non `filesDir`: se il telefono ha bisogno di spazio è giusto
+     * che possa buttare l'audio, che si riscarica sempre da MEGA. Il controllo
+     * sull'esistenza del file al play copre proprio questo caso.
+     */
+    private fun cartellaAudio(): File =
+        File(getApplication<Application>().cacheDir, "audio").also { it.mkdirs() }
 
     fun scaricaTutte(cartellaId: String) {
         if (bulkJob?.isActive == true) return
@@ -671,17 +772,23 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val giaFatte = totali - mancanti.size
 
         bulkJob = viewModelScope.launch {
+            var falliti = 0
+            // Una alla volta e non tutte insieme: cinque download in parallelo
+            // si rubano la banda a vicenda e finiscono tutti più tardi.
             mancanti.forEachIndexed { i, t ->
-                aggiornaTraccia(t.id) {
-                    it.copy(scaricata = true, downloadEvents = it.downloadEvents + 1)
-                }
+                scaricaUna(t)?.let { falliti++ }
                 _state.update { s ->
                     s.copy(bulkDownload = StatoBulkDownload(cartellaId, giaFatte + i + 1, totali))
                 }
-                delay(PASSO_BULK_MS)
             }
             _state.update { it.copy(bulkDownload = null) }
-            mostra("Tutte le tracce sono state scaricate")
+            mostra(
+                when (falliti) {
+                    0 -> "Tutte le tracce sono sul telefono"
+                    mancanti.size -> "Non sono riuscito a scaricare niente"
+                    else -> "Scaricate ${mancanti.size - falliti} su ${mancanti.size}"
+                }
+            )
         }
     }
 
@@ -983,7 +1090,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     private companion object {
         const val TICK_MS = 250L
-        const val PASSO_BULK_MS = 380L
         const val SOGLIA_ASCOLTO = 30f
         const val BUCKETS = 24
     }

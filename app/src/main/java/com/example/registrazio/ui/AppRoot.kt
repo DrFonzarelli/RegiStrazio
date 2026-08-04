@@ -215,6 +215,7 @@ fun AppRoot(
                                 bulkInCorso = state.bulkDownload?.cartellaId == schermata.cartellaId,
                                 tracciaInRiproduzione = state.riproduzione.tracciaId,
                                 audioAttivo = state.riproduzione.audioAttivo,
+                                scaricamenti = state.scaricamenti,
                                 posizioneSecondi = state.riproduzione.posizioneSecondi,
                                 mioAppUid = state.identita?.appUid.orEmpty(),
                                 onCambiaOrdinamento = vm::cambiaOrdinamento,

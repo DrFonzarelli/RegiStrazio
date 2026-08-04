@@ -3,10 +3,6 @@ package com.example.registrazio.ui.home
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -95,7 +91,6 @@ fun HomeScreen(
                 numTracce = conteggioTracce(cartella.id),
                 rinominabile = cartella.id in cartelleRinominabili,
                 rinominaSubito = daRinominare == cartella.id,
-                inAggiornamento = collegamento.cartellaInAggiornamento == cartella.id,
                 onClick = { onApriCartella(cartella.id) },
                 onRinomina = { nuovo ->
                     onRinomina(cartella.id, nuovo)
@@ -127,7 +122,6 @@ private fun FolderCard(
     numTracce: Int,
     rinominabile: Boolean,
     rinominaSubito: Boolean,
-    inAggiornamento: Boolean,
     onClick: () -> Unit,
     onRinomina: (String) -> Unit
 ) {
@@ -135,19 +129,6 @@ private fun FolderCard(
     val interaction = remember { MutableInteractionSource() }
     var inRinomina by remember { mutableStateOf(false) }
 
-    // Onda che scorre da sinistra a destra mentre la cartella si ricarica.
-    //
-    // Scorre e ricomincia invece di riempirsi una volta sola: MEGA risponde in
-    // un colpo solo, quindi una percentuale vera non esiste. Una barra che si
-    // riempie a tempo direbbe un numero inventato; questa dice solo "sto
-    // lavorando", che è tutto quello che sappiamo davvero.
-    val onda = rememberInfiniteTransition(label = "aggiornamento")
-    val avanzamento by onda.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(1100, easing = LinearEasing)),
-        label = "avanzamento"
-    )
     var bozza by remember(nome) { mutableStateOf(nome) }
     val focusRequester = remember { FocusRequester() }
 
@@ -167,16 +148,6 @@ private fun FolderCard(
             .pressScale(interaction)
             .clip(Radius.cardMd)
             .background(colors.surface)
-            // Dietro il contenuto, non sopra: niente si sposta e niente si
-            // copre, la card resta leggibile mentre si aggiorna.
-            .drawBehind {
-                if (inAggiornamento) {
-                    drawRect(
-                        color = colors.accentSoft,
-                        size = androidx.compose.ui.geometry.Size(size.width * avanzamento, size.height)
-                    )
-                }
-            }
             .appBorder(colors.border, Radius.md)
             .clickable(
                 interactionSource = interaction,

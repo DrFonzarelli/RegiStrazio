@@ -5,12 +5,14 @@ import com.example.registrazio.data.local.db.ArchivioDb
 import com.example.registrazio.data.local.db.CartellaEntity
 import com.example.registrazio.data.local.db.CommentoEntity
 import com.example.registrazio.data.local.db.ConteggioPendenti
+import com.example.registrazio.data.local.db.DownloadEntity
 import com.example.registrazio.data.local.db.TracciaEntity
 import com.example.registrazio.data.model.Cartella
 import com.example.registrazio.data.model.Commento
 import com.example.registrazio.data.model.StatoSync
 import com.example.registrazio.data.model.Traccia
 import com.example.registrazio.data.remote.MegaCrypto
+import java.io.File
 
 /**
  * L'archivio sul telefono: cartelle, tracce e commenti, con lo stato di
@@ -45,6 +47,40 @@ class ArchivioLocale(context: Context) {
             val nonce = entita.nonce ?: return@mapNotNull null
             entita.id to MegaCrypto.ChiaveFile(aes, nonce)
         }.toMap()
+
+    /**
+     * Le tracce scaricate, per id, con il percorso del file.
+     *
+     * Le righe che puntano a un file non più sul disco vengono buttate: può
+     * essere stato cancellato da fuori (pulizia della cache, gestore file), e
+     * tenerle vorrebbe dire provare a suonare qualcosa che non c'è.
+     */
+    suspend fun download(): Map<String, File> {
+        val vivi = mutableMapOf<String, File>()
+        for (riga in dao.download()) {
+            val file = File(riga.percorso)
+            if (file.exists() && file.length() > 0) vivi[riga.tracciaId] = file
+            else dao.cancellaDownload(riga.tracciaId)
+        }
+        return vivi
+    }
+
+    suspend fun registraDownload(tracciaId: String, file: File) {
+        dao.salvaDownload(
+            DownloadEntity(
+                tracciaId = tracciaId,
+                percorso = file.absolutePath,
+                dimensioneByte = file.length(),
+                scaricatoIl = System.currentTimeMillis()
+            )
+        )
+    }
+
+    /** Toglie il file dal telefono: al play successivo si torna in streaming. */
+    suspend fun rimuoviDownload(tracciaId: String) {
+        dao.download(tracciaId)?.let { File(it.percorso).delete() }
+        dao.cancellaDownload(tracciaId)
+    }
 
     suspend fun pendenti(): ConteggioPendenti = ConteggioPendenti(
         cartelle = dao.cartelleDaSincronizzare(),
@@ -92,6 +128,11 @@ class ArchivioLocale(context: Context) {
     }
 
     suspend fun rimuoviCartella(id: String) {
+        // Scollegando la cartella i suoi file scaricati non servono più a
+        // nessuno: lasciarli occuperebbe spazio senza modo di ritrovarli.
+        for (traccia in dao.tracce().filter { it.cartellaId == id }) {
+            rimuoviDownload(traccia.id)
+        }
         dao.cancellaCommentiDi(id)
         dao.cancellaTracceDi(id)
         dao.marcaCartellaDaEliminare(id)
@@ -100,6 +141,8 @@ class ArchivioLocale(context: Context) {
 
     /** Strumento di test del foglio account. */
     suspend fun svuota() {
+        for (riga in dao.download()) File(riga.percorso).delete()
+        dao.svuotaDownload()
         dao.svuotaCommenti()
         dao.svuotaTracce()
         dao.svuotaCartelle()

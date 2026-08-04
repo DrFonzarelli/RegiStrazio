@@ -83,6 +83,21 @@ data class TracciaEntity(
     override fun hashCode(): Int = id.hashCode()
 }
 
+/**
+ * Una traccia scaricata sul telefono.
+ *
+ * Tabella a parte e non un campo di [TracciaEntity], perché il download è una
+ * scelta di **questo** telefono: non riguarda il gruppo e non finisce mai su
+ * Firestore. Non ha quindi nemmeno uno [com.example.registrazio.data.model.StatoSync].
+ */
+@Entity(tableName = "download")
+data class DownloadEntity(
+    @PrimaryKey val tracciaId: String,
+    val percorso: String,
+    val dimensioneByte: Long,
+    val scaricatoIl: Long
+)
+
 @Entity(tableName = "commenti")
 data class CommentoEntity(
     @PrimaryKey val id: String,

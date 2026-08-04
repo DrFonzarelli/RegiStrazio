@@ -86,6 +86,21 @@ class PlayerMega(context: Context) {
         player.play()
     }
 
+    /**
+     * Suona un file già sul telefono.
+     *
+     * Niente `MegaDataSourceFactory` qui: su disco il file è già in chiaro,
+     * perché lo scaricatore lo decifra mentre lo scrive. Va bene il MediaItem
+     * normale, e non serve nemmeno la rete.
+     */
+    fun riproduciFile(file: java.io.File, daSecondi: Float) {
+        durataNotificata = 0
+        player.setMediaItem(MediaItem.fromUri(android.net.Uri.fromFile(file)))
+        player.prepare()
+        if (daSecondi > 0f) player.seekTo((daSecondi * 1000).toLong())
+        player.play()
+    }
+
     fun riprendi() = player.play()
 
     fun pausa() = player.pause()

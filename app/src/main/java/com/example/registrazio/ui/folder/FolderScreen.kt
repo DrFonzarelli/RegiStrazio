@@ -45,6 +45,7 @@ fun FolderScreen(
     bulkInCorso: Boolean,
     tracciaInRiproduzione: String?,
     audioAttivo: Boolean,
+    scaricamenti: Map<String, Float>,
     posizioneSecondi: Float,
     mioAppUid: String,
     onCambiaOrdinamento: () -> Unit,
@@ -74,6 +75,7 @@ fun FolderScreen(
                 posizioneSecondi = if (suona) posizioneSecondi else 0f,
                 inRiproduzione = suona,
                 audioAttivo = suona && audioAttivo,
+                scaricamento = scaricamenti[traccia.id],
                 mioAppUid = mioAppUid,
                 azioni = azioniPerTraccia(traccia),
                 onChiediEliminazione = { onChiediEliminazione(traccia, it) }

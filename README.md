@@ -17,8 +17,8 @@ per natura — raramente due persone la usano insieme.
 Le cartelle audio esistono già su MEGA (il gruppo le usa già). L'app legge da
 MEGA e aggiunge il layer sociale (commenti, reazioni, note) su Firestore.
 
-**Riferimento visivo obbligatorio:** `prova-app-v3-integrata.html` è il prototipo
-funzionante dell'intera UI. Claude Code deve usarlo come spec grafica 1:1 —
+**Riferimento visivo obbligatorio:** `prova-app-v3-integrata.html`, nella radice
+del repository, è il prototipo funzionante dell'intera UI. Claude Code deve usarlo come spec grafica 1:1 —
 layout, colori, componenti, animazioni, interazioni sono già tutti definiti lì.
 Non reinventare nulla visivamente: tradurre in Kotlin/Compose quello che il
 prototipo fa in HTML/JS.
@@ -35,7 +35,7 @@ prototipo fa in HTML/JS.
 | Auth                    | Firebase Anonymous Auth                         |
 | Storage locale          | Room DB                                         |
 | File audio remoti       | MEGA (HTTP API pubblica, vedi sezione dedicata) |
-| Download locale         | DownloadManager di sistema Android              |
+| Download locale         | OkHttp + decifratura AES-CTR (vedi errore 13)    |
 | Preferenze persistenti  | EncryptedSharedPreferences (Android Keystore)   |
 
 **SDK minima:** Android 8.0 (minSdk 26, copre ~97% dispositivi attivi)
@@ -108,6 +108,25 @@ Due regole che valgono per tutte e tre:
 - **Il link va pescato dal testo.** MEGA non condivide l'indirizzo nudo ma una
   frase intorno, e passando per una chat può raccogliere punteggiatura. Se ne
   occupa `LinkMega.cercaNelTesto`, coperta da test JVM.
+
+### Il riempimento di avanzamento: dov'è nel prototipo e dove no
+
+Nel prototipo la barra che si riempie esiste **solo** sul tasto "Scarica tutte"
+(`.bulk-dl-fill`: `width` da 0 a 100%, `background: var(--accent-soft)`,
+`z-index: 0` sotto icona ed etichetta). L'indicatore della traccia singola
+(`.dl-indicator`) è **solo un'icona** che compare quando il file c'è: nel
+prototipo `downloaded` era un booleano che si girava all'istante, non c'era
+niente da attendere.
+
+Ora che il download è reale e dura, lo stesso riempimento è stato portato
+**anche sulla card della traccia**, con la percentuale vera dei byte. Non è una
+cosa che stava nel prototipo: è una cosa che il prototipo non poteva avere.
+
+**Regola su questo genere di indicatori:** una barra che si riempie promette una
+misura. Va usata dove una misura c'è — byte su byte, file su file — e mai dove
+si potrebbe solo far scorrere un'animazione a tempo. Per la lettura di una
+cartella MEGA, che è una chiamata sola, non c'è niente da misurare: lì non si
+mette nessuna barra.
 
 ### Ciclo di vita di una traccia
 
@@ -203,13 +222,15 @@ data class CommentoPending(
 )
 
 // Tracce scaricate in locale
-@Entity(tableName = "tracce_download")
-data class TracciaDownload(
+@Entity(tableName = "download")
+data class DownloadEntity(
     @PrimaryKey val tracciaId: String,
-    val percorsoLocale: String,         // path assoluto in cacheDir/audio/
-    val scaricatoIl: Long,
-    val dimensioneBytes: Long
+    val percorso: String,               // path assoluto in cacheDir/audio/
+    val dimensioneByte: Long,
+    val scaricatoIl: Long
 )
+// Nessuno StatoSync: il download è una scelta di questo telefono e non
+// riguarda il gruppo, quindi non c'è niente da sincronizzare.
 
 enum class StatoSync { LOCALE, SINCRONIZZATO, DA_ELIMINARE, ERRORE }
 ```
@@ -821,7 +842,8 @@ perché la BOM non le mostra): Firestore `26.5.0`, Auth `24.2.0`.
 | MEGA HTTP API + crypto | 🟡 | elenco e decifratura **verificati sul campo**; manca lo scarico dei byte |
 | Tasto Sincronizza | ❌ | |
 | Banner offline | ❌ | |
-| Download reale su disco | ❌ | il tasto cambia solo un'icona: non scarica niente |
+| Download reale su disco | 🟡 | scarica e decifra davvero, con avanzamento: **compila, da provare** |
+| Riproduzione dal file locale | 🟡 | se la traccia è sul telefono si suona da lì, senza rete |
 
 Detto in modo diretto, perché sono le domande che vengono naturali:
 **il link MEGA collega davvero** e l'audio si sente; **i commenti non arrivano
@@ -1033,7 +1055,30 @@ un altro punto del codice. La regola generale: quando si rilegge una sorgente
 esterna, tutto ciò che quella sorgente non conosce va conservato, non
 ricostruito. Vale per MEGA oggi e varrà per Firestore domani.
 
-#### 13. Warning KSP sui source set Kotlin
+#### 13. Il `DownloadManager` di sistema non può scaricare da MEGA
+
+*Dove stava scritto male:* questo stesso documento indicava il `DownloadManager`
+di Android per il download locale.
+
+*Perché non funziona:* il `DownloadManager` scarica e salva, e basta. Di AES non
+sa niente, quindi metterebbe su disco i byte **cifrati** — un file che non
+suona. È lo stesso motivo per cui lo streaming ha bisogno di un `DataSource`
+suo: i byte di MEGA vanno sempre decifrati da noi.
+
+*Fix:* `ScaricatoreMega` scarica con OkHttp e decifra mentre scrive. Quello che
+finisce in `cacheDir/audio/` è un file audio normale, e il ramo di riproduzione
+locale non deve sapere niente né di MEGA né di crittografia.
+
+Due dettagli che valgono la pena:
+
+- si scrive su un file `.parziale` e si rinomina solo alla fine. Un download
+  interrotto non deve lasciare mezzo brano che al play successivo *sembra*
+  completo;
+- `cacheDir` e non `filesDir`: se il telefono ha bisogno di spazio è giusto che
+  possa buttare l'audio, che si riscarica. Al play si controlla che il file ci
+  sia ancora, e se non c'è si torna in streaming senza dire niente a nessuno.
+
+#### 14. Warning KSP sui source set Kotlin
 
 *Fix applicato:* `android.disallowKotlinSourceSets=false` in `gradle.properties`.
 

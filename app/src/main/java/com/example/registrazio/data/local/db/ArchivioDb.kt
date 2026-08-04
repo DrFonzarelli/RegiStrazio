@@ -26,6 +26,12 @@ interface ArchivioDao {
     @Query("SELECT * FROM commenti WHERE statoSync != 'DA_ELIMINARE' ORDER BY timestampSecondi")
     suspend fun commenti(): List<CommentoEntity>
 
+    @Query("SELECT * FROM download")
+    suspend fun download(): List<DownloadEntity>
+
+    @Query("SELECT * FROM download WHERE tracciaId = :tracciaId")
+    suspend fun download(tracciaId: String): DownloadEntity?
+
     // ---------- scrittura ----------
 
     @Upsert
@@ -39,6 +45,12 @@ interface ArchivioDao {
 
     @Upsert
     suspend fun salvaCommento(commento: CommentoEntity)
+
+    @Upsert
+    suspend fun salvaDownload(download: DownloadEntity)
+
+    @Query("DELETE FROM download WHERE tracciaId = :tracciaId")
+    suspend fun cancellaDownload(tracciaId: String)
 
     // ---------- eliminazione ----------
     //
@@ -85,11 +97,19 @@ interface ArchivioDao {
 
     @Query("DELETE FROM cartelle")
     suspend fun svuotaCartelle()
+
+    @Query("DELETE FROM download")
+    suspend fun svuotaDownload()
 }
 
 @Database(
-    entities = [CartellaEntity::class, TracciaEntity::class, CommentoEntity::class],
-    version = 1,
+    entities = [
+        CartellaEntity::class,
+        TracciaEntity::class,
+        CommentoEntity::class,
+        DownloadEntity::class
+    ],
+    version = 2,
     exportSchema = false
 )
 @TypeConverters(Convertitori::class)

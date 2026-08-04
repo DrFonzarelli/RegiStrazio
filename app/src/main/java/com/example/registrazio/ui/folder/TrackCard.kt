@@ -37,6 +37,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -91,6 +92,8 @@ fun TrackCard(
     posizioneSecondi: Float,
     inRiproduzione: Boolean,
     audioAttivo: Boolean,
+    /** 0..1 mentre la traccia si scarica, `null` quando non sta scaricando. */
+    scaricamento: Float?,
     mioAppUid: String,
     azioni: TrackCardActions,
     onChiediEliminazione: (Commento) -> Unit,
@@ -153,7 +156,21 @@ fun TrackCard(
             .fillMaxWidth()
             .clip(Radius.cardLg)
             .background(colors.surface)
-            .appBorder(if (inRiproduzione) colors.accent else colors.border, Radius.lg)
+            // Riempimento del download, dietro il contenuto: come `.bulk-dl-fill`
+            // del prototipo, che sta a z-index 0 sotto icona ed etichetta. Qui la
+            // percentuale è vera — byte scaricati sul totale.
+            .drawBehind {
+                scaricamento?.let { frazione ->
+                    drawRect(
+                        color = colors.accentSoft,
+                        size = androidx.compose.ui.geometry.Size(size.width * frazione, size.height)
+                    )
+                }
+            }
+            .appBorder(
+                if (inRiproduzione || scaricamento != null) colors.accent else colors.border,
+                Radius.lg
+            )
             .padding(horizontal = 12.dp, vertical = 10.dp)
     ) {
         // ---------- testata ----------
@@ -248,8 +265,21 @@ fun TrackCard(
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Text(secToLabel(posizioneSecondi), color = colors.textMuted, fontSize = 11.sp)
-            if (traccia.scaricata) {
-                AppIcon(AppIcons.CloudDone, 13.dp, colors.accent)
+            when {
+                // Mentre scarica il numero dice quanto manca; a fine corsa
+                // resta la sola icona, come `.dl-indicator` nel prototipo.
+                scaricamento != null -> Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        "${(scaricamento * 100).toInt()}%",
+                        color = colors.accent,
+                        fontSize = 11.sp
+                    )
+                    AppIcon(AppIcons.Cloud, 13.dp, colors.accent)
+                }
+                traccia.scaricata -> AppIcon(AppIcons.CloudDone, 13.dp, colors.accent)
             }
         }
 
