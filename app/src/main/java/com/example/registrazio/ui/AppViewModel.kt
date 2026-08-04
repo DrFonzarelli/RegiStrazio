@@ -730,17 +730,22 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * traccia successiva un istante dopo.
      */
     private fun pausaDownload(tracciaId: String) {
+        // La coda si ferma solo se questa traccia è sua. Fermare lo "Scarica
+        // tutte" della cartella A perché si è messo in pausa un download avviato
+        // a mano nella cartella B sarebbe un effetto che nessuno ha chiesto.
+        val dellaCoda = bulkJob?.isActive == true &&
+            traccia(tracciaId)?.cartellaId == cartellaBulk
+
         jobDownload.remove(tracciaId)?.cancel()
+        if (dellaCoda) bulkJob?.cancel()
+
         _state.update { s ->
             val corrente = s.scaricamenti[tracciaId] ?: StatoScaricamento(0f, true)
             s.copy(
                 scaricamenti = s.scaricamenti + (tracciaId to corrente.copy(inPausa = true)),
-                bulkInPausa = s.bulkInPausa ?: cartellaBulk.takeIf { bulkJob?.isActive == true }
+                bulkDownload = if (dellaCoda) null else s.bulkDownload,
+                bulkInPausa = if (dellaCoda) cartellaBulk else s.bulkInPausa
             )
-        }
-        if (bulkJob?.isActive == true) {
-            bulkJob?.cancel()
-            _state.update { it.copy(bulkDownload = null) }
         }
     }
 
@@ -808,10 +813,22 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
         return try {
             scaricatore.scarica(link, traccia.idFileMega, chiave, destinazione) { frazione ->
-                _state.update {
-                    it.copy(
-                        scaricamenti = it.scaricamenti +
-                            (traccia.id to StatoScaricamento(frazione, false))
+                _state.update { s ->
+                    // **Il progresso aggiorna solo il numero, mai `inPausa`.**
+                    //
+                    // `cancel()` è cooperativo e non interrompe una `read()` già
+                    // in volo: dopo la richiesta di pausa arriva ancora un
+                    // aggiornamento, e scrivendo `inPausa = false` rimetteva la
+                    // traccia in stato "sta scaricando" un istante dopo che
+                    // l'utente l'aveva fermata. Serviva un secondo tap per
+                    // vedere l'effetto del primo.
+                    //
+                    // Il flag appartiene a chi dà i comandi (icona, kebab,
+                    // "Scarica tutte"), non a chi riporta i byte.
+                    val corrente = s.scaricamenti[traccia.id] ?: return@update s
+                    s.copy(
+                        scaricamenti = s.scaricamenti +
+                            (traccia.id to corrente.copy(frazione = frazione))
                     )
                 }
             }
@@ -886,15 +903,23 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun pausaBulk() {
+        val cartella = cartellaBulk
         bulkJob?.cancel()
-        jobDownload.values.forEach { it.cancel() }
-        jobDownload.clear()
+
+        // Solo le tracce di *questa* cartella: il tasto sta lì dentro e parla di
+        // quello che si vede. Un download avviato a mano altrove non c'entra e
+        // non deve fermarsi.
+        val suoi = traccePerCartella(cartella.orEmpty()).map { it.id }.toSet()
+        suoi.forEach { jobDownload.remove(it)?.cancel() }
+
         _state.update { s ->
             s.copy(
                 bulkDownload = null,
-                bulkInPausa = cartellaBulk,
+                bulkInPausa = cartella,
                 // Le tracce a metà restano a metà, segnate come ferme.
-                scaricamenti = s.scaricamenti.mapValues { (_, v) -> v.copy(inPausa = true) }
+                scaricamenti = s.scaricamenti.mapValues { (id, v) ->
+                    if (id in suoi) v.copy(inPausa = true) else v
+                }
             )
         }
         mostra("Scaricamento in pausa")

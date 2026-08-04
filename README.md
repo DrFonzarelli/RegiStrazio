@@ -504,10 +504,16 @@ Flusso reale (`data/remote/ScaricatoreMega.kt`):
 
 | Gesto | Effetto |
 |---|---|
-| ⏸ sulla percentuale di una traccia | ferma quella traccia **e** la coda "Scarica tutte", se c'era |
+| ⏸ sulla percentuale di una traccia | ferma quella traccia **e** la coda "Scarica tutte", se la traccia era sua |
 | ▶ sulla percentuale di una traccia | riprende **solo quella**; la coda resta ferma |
-| tasto "Scarica tutte" durante il download | mette in pausa tutto |
+| tasto "Scarica tutte" durante il download | mette in pausa tutto, ma solo in **quella cartella** |
 | tasto "Scarica tutte" da fermo a metà | riprende la coda da dove era |
+
+Icona della percentuale, voce del kebab e tasto "Scarica tutte" sono **tre
+comandi della stessa cosa**: passano per le stesse funzioni e devono portare allo
+stesso stato con un tap solo. I primi due chiamano letteralmente
+`cambiaDownload`. Se in futuro qualcuno ne aggiunge un quarto, deve entrare da
+lì, non riscrivere lo stato per conto suo — vedi errore 19.
 
 Il file a metà è **solo sul telefono**: non si rischia di pubblicare un file
 troncato, e una traccia scaricata a metà continua a suonare in streaming da MEGA
@@ -919,7 +925,7 @@ perché la BOM non le mostra): Firestore `26.5.0`, Auth `24.2.0`.
 | Tasto Sincronizza | ❌ | |
 | Banner offline | ❌ | c'è il messaggio al gesto che fallisce, non il banner permanente |
 | Download reale su disco | ✅ | **provato**: scarica, decifra, suona da locale, si rimuove |
-| Pausa e ripresa del download | 🟡 | `.parziale` + `Range`: **compila, da provare sul telefono** |
+| Pausa e ripresa del download | ✅ | **provata**: riprende da dove era, dai tre comandi |
 | Riproduzione dal file locale | ✅ | **provata**, anche togliendo il file mentre suona |
 
 Detto in modo diretto, perché sono le domande che vengono naturali:
@@ -1245,6 +1251,42 @@ programmare e sono l'opposto per chi le usa. Prima di scrivere `cancel()`,
 chiedersi se chi tocca quel tasto vuole **rinunciare** o vuole **fermarsi**. Su
 un download di decine di megabyte in mobilità la risposta è quasi sempre la
 seconda, e va sostenuta anche se costa un file temporaneo in più.
+
+#### 19. Chi riporta il progresso non deve possedere lo stato
+
+*Sintomo:* toccare la percentuale fermava davvero il download, ma la card restava
+**verde con l'icona di pausa** invece di diventare grigia con il play. Un secondo
+tap la sistemava. Identico dal kebab e dal tasto "Scarica tutte": tutti e tre
+richiedevano due tap per mostrare l'effetto di uno.
+
+*Causa:* `Job.cancel()` in Kotlin è **cooperativo** e non interrompe una
+`read()` bloccante già partita. Dopo il comando di pausa la lettura da 64 KB in
+volo arrivava a termine, scriveva su disco e chiamava `onProgresso(frazione)` —
+che scriveva `StatoScaricamento(frazione, inPausa = false)`, **riaccendendo** lo
+stato "sta scaricando" un istante dopo che l'utente l'aveva spento. Al secondo
+tap la coroutine era morta e nessuno riscriveva più: da qui l'illusione che
+servissero due tap.
+
+*Fix:* la callback del progresso aggiorna **solo il numero**
+(`corrente.copy(frazione = ...)`) e non tocca mai `inPausa`. Il flag appartiene a
+chi dà i comandi.
+
+*Da ricordare:* due cose.
+1. `cancel()` chiede, non impone. Fra la richiesta e l'effetto passa del tempo,
+   e in quel tempo il codice che si sta cancellando **continua a scrivere**. Se
+   quel codice tocca lo stesso stato di chi l'ha cancellato, l'ultimo che scrive
+   vince — e non è chi ha premuto.
+2. Ogni pezzo di stato deve avere **un solo proprietario**. La frazione è del
+   downloader, `inPausa` è dei comandi. Quando il primo scriveva anche il
+   secondo, il bug era inevitabile: non era un errore di logica ma di proprietà.
+
+*Corollario, sempre da qui:* icona, kebab e "Scarica tutte" sono **tre comandi
+della stessa cosa** e devono passare per le stesse funzioni. Icona e kebab
+chiamano già entrambi `cambiaDownload`. Il terzo, `pausaBulk`, agisce su tutta la
+coda — ed è stato ristretto alle tracce **della sua cartella**, perché fermare lo
+"Scarica tutte" di una cartella non deve fermare un download avviato a mano in
+un'altra. Stessa correzione in `pausaDownload`, che metteva in pausa la coda
+anche quando la traccia toccata non le apparteneva.
 
 ---
 
