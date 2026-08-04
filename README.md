@@ -539,6 +539,15 @@ annunciato su `CommentiDaFuori`: se l'app è viva il ViewModel lo raccoglie e la
 card si aggiorna; se non lo è, al prossimo avvio arriva dal database. Vale la
 seconda regola in cima al documento — il telefono è la fonte di verità, sempre.
 
+**`addSession` non è facoltativo.** `MediaSessionService` registra una sessione
+col proprio gestore di notifiche quando `onGetSession` viene chiamato — e quello
+succede solo se un `MediaController` si connette. Qui non si connette nessuno:
+l'interfaccia comanda il player direttamente. Senza un `addSession(sessione)`
+esplicito in `onCreate` il servizio parte, costruisce la sessione e **non mostra
+mai niente**, senza nessun errore. Vale la pena tenerlo a mente: gran parte
+degli esempi di Media3 danno per scontato il `MediaController`, e omettono il
+passaggio perché nel loro caso avviene per caso.
+
 **Play/pausa dalla notifica non passano dal ViewModel.** Agiscono sul player, e
 il ViewModel si riallinea da `onIsPlayingChanged` (`allineaAlPlayer`). Quel
 metodo non comanda mai il player: se comandasse, un tocco sulla notifica e uno

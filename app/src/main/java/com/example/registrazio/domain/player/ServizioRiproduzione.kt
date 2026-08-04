@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaNotification
@@ -48,11 +49,26 @@ class ServizioRiproduzione : MediaSessionService() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        sessione = MediaSession.Builder(this, PlayerCondiviso.player(this))
+        val nuova = MediaSession.Builder(this, PlayerCondiviso.player(this))
             .setSessionActivity(apriApp)
             .build()
+        sessione = nuova
 
         setMediaNotificationProvider(ProviderNotifica(this))
+
+        // **Senza questa riga non compare nessuna notifica.**
+        //
+        // `onGetSession` viene chiamato solo quando un `MediaController` si
+        // connette al servizio, ed è da lì che Media3 registra la sessione col
+        // proprio gestore di notifiche. Nella nostra app nessuno connette un
+        // controller — l'interfaccia comanda il player direttamente — quindi
+        // quel momento non arrivava mai: il servizio partiva, costruiva la
+        // sessione, e restava muto.
+        //
+        // `addSession` fa esplicitamente quello che il controller avrebbe fatto
+        // per caso.
+        addSession(nuova)
+        Log.d(TAG, "servizio avviato, sessione registrata")
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = sessione
@@ -69,10 +85,11 @@ class ServizioRiproduzione : MediaSessionService() {
     }
 
     override fun onDestroy() {
-        sessione?.run {
-            release()
-            sessione = null
+        sessione?.let {
+            removeSession(it)
+            it.release()
         }
+        sessione = null
         super.onDestroy()
     }
 
@@ -94,6 +111,7 @@ class ServizioRiproduzione : MediaSessionService() {
     companion object {
         const val CANALE = "riproduzione"
         const val ID_NOTIFICA = 1001
+        private const val TAG = "ServizioRiproduzione"
 
         /** Accende il servizio, se non è già acceso. */
         fun avvia(context: Context) {
@@ -113,9 +131,10 @@ class ServizioRiproduzione : MediaSessionService() {
 /**
  * La notifica della traccia in ascolto: titolo, play/pausa e **Commenta**.
  *
- * Scritta a mano invece di usare quella predefinita di Media3 per un motivo
- * solo: le azioni standard sono tasti, e a noi serve un campo di testo
- * (`RemoteInput`), che un `CommandButton` non può portarsi dietro.
+ * Scritta a mano invece di usare quella predefinita di Media3 perché le sue
+ * azioni sono tutte comandi del player, e "Commenta" non lo è: apre una nostra
+ * schermata. Costruendo la notifica qui, i due tasti stanno sullo stesso piano
+ * invece di essere uno dentro Media3 e uno appiccicato sopra.
  */
 @UnstableApi
 private class ProviderNotifica(private val context: Context) : MediaNotification.Provider {
