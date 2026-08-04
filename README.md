@@ -725,7 +725,7 @@ e `app/build.gradle.kts` — se modifichi lì, aggiorna anche qui.
 | core-ktx | 1.18.0 | catalog `coreKtx` |
 | lifecycle (runtime + viewmodel-compose) | 2.10.0 | catalog `lifecycleRuntimeKtx` |
 | activity-compose | 1.13.0 | catalog `activityCompose` |
-| Room | 2.6.1 | hardcoded in `app/build.gradle.kts` |
+| Room | 2.7.1 | catalog `room` |
 | Media3 / ExoPlayer | 1.2.0 | hardcoded |
 | navigation-compose | 2.7.7 | hardcoded |
 | kotlinx-coroutines-android | 1.7.1 | hardcoded |
@@ -735,6 +735,14 @@ e `app/build.gradle.kts` — se modifichi lì, aggiorna anche qui.
 
 **SDK e toolchain:** `compileSdk` 36 (minor 1) · `minSdk` 26 · `targetSdk` 36 ·
 Java/JVM target 17.
+
+> **Le versioni nel catalogo non sono quelle che girano davvero.** Il catalogo
+> dice Kotlin 2.0.21 e KSP 2.0.21-1.0.28, ma i log di build mostrano che vengono
+> scaricati `kotlin-compiler-embeddable-2.2.10` e
+> `symbol-processing-aa-embeddable-2.2.10-2.0.2`: **AGP 9 porta con sé il proprio
+> Kotlin e impone il KSP corrispondente**. Prima di dare la colpa a una versione
+> scritta qui, guardare cosa scarica davvero il log — è così che si è capito
+> l'errore 10.
 
 **Versioni risolte a runtime dalle BOM** (utili quando si cerca documentazione,
 perché la BOM non le mostra): Firestore `26.5.0`, Auth `24.2.0`.
@@ -937,7 +945,29 @@ misurando, va sempre usata la somma degli spostamenti, mai la posizione
 assoluta. E un `pointerInput` legge per sempre i valori della composizione in
 cui è nato: quelli che cambiano vanno passati con `rememberUpdatedState`.
 
-#### 9. Warning KSP sui source set Kotlin
+#### 10. Room 2.6.1 contro KSP2: `unexpected jvm signature V`
+
+*Sintomo:* `kspDebugKotlin` fallisce con
+`java.lang.IllegalStateException: unexpected jvm signature V`, appena si
+aggiunge il primo DAO. Nessun riferimento a un file o a una riga.
+
+*Causa:* la `V` è il tipo di ritorno `void`. Il processore di Room 2.6.1 è
+precedente a KSP2 e inciampa sulle funzioni `suspend` che non restituiscono
+niente — cioè quasi tutte quelle di scrittura di un DAO. Il supporto a KSP2
+arriva con Room 2.7.
+
+Il dettaglio che porta alla diagnosi non sta nel messaggio ma nelle righe di
+download subito sopra: `symbol-processing-aa-embeddable-2.2.10-2.0.2`. È
+KSP **2.2.10**, non il 2.0.21 scritto nel catalogo — AGP 9 impone il proprio.
+
+*Fix:* Room a 2.7.1, spostata nel version catalog.
+
+*Da ricordare:* un errore del processore di annotazioni senza file né riga è
+quasi sempre un'incompatibilità di versione, non un errore nel codice. E la
+versione da guardare è quella che il log **scarica**, non quella che il
+catalogo dichiara.
+
+#### 11. Warning KSP sui source set Kotlin
 
 *Fix applicato:* `android.disallowKotlinSourceSets=false` in `gradle.properties`.
 
