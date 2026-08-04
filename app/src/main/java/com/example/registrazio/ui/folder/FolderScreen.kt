@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -33,6 +34,7 @@ import androidx.compose.ui.unit.sp
 import com.example.registrazio.data.model.Commento
 import com.example.registrazio.data.model.Traccia
 import com.example.registrazio.ui.Ordinamento
+import com.example.registrazio.ui.RichiestaCommento
 import com.example.registrazio.ui.StatoScaricamento
 import com.example.registrazio.ui.components.appBorder
 import com.example.registrazio.ui.theme.AppIcon
@@ -51,7 +53,20 @@ fun FolderScreen(
     bulkInCorso: Boolean,
     bulkInPausa: Boolean,
     tracciaInRiproduzione: String?,
+    /** Play davvero premuto: decide il tasto della card e il bordo accent. */
+    inRiproduzione: Boolean,
     audioAttivo: Boolean,
+    /**
+     * Lo stato della lista **arriva da fuori**.
+     *
+     * Non è un dettaglio: la barra in ascolto compare solo quando la card della
+     * traccia è fuori dallo schermo, e per saperlo chi la disegna deve poter
+     * leggere questo stato. Creandolo qui dentro, quello di fuori restava vuoto
+     * e la barra non spariva mai.
+     */
+    statoLista: LazyListState,
+    /** Traccia per cui è stato chiesto di aprire il riquadro del commento. */
+    apriCommentoPer: RichiestaCommento?,
     scaricamenti: Map<String, StatoScaricamento>,
     posizioneSecondi: Float,
     mioAppUid: String,
@@ -62,7 +77,7 @@ fun FolderScreen(
     contentPadding: PaddingValues,
     modifier: Modifier = Modifier
 ) {
-    LazyColumn(modifier.fillMaxWidth(), contentPadding = contentPadding) {
+    LazyColumn(modifier.fillMaxWidth(), state = statoLista, contentPadding = contentPadding) {
         item {
             SortBar(
                 ordinamento = ordinamento,
@@ -81,14 +96,19 @@ fun FolderScreen(
         }
 
         items(tracce, key = { it.id }) { traccia ->
-            val suona = tracciaInRiproduzione == traccia.id
+            val selezionata = tracciaInRiproduzione == traccia.id
             TrackCard(
                 traccia = traccia,
-                posizioneSecondi = if (suona) posizioneSecondi else 0f,
-                inRiproduzione = suona,
-                audioAttivo = suona && audioAttivo,
+                // La posizione si mostra anche in pausa: è lì che sei rimasto.
+                posizioneSecondi = if (selezionata) posizioneSecondi else 0f,
+                // `is-playing` nel prototipo si toglie alla pausa, non al cambio
+                // di traccia: bordo accent e tasto pieno dicono "sta suonando
+                // adesso", non "è la traccia selezionata".
+                inRiproduzione = selezionata && inRiproduzione,
+                audioAttivo = selezionata && audioAttivo,
                 scaricamento = scaricamenti[traccia.id],
                 mioAppUid = mioAppUid,
+                apriCommento = apriCommentoPer?.takeIf { it.tracciaId == traccia.id }?.seq,
                 azioni = azioniPerTraccia(traccia),
                 onChiediEliminazione = { onChiediEliminazione(traccia, it) }
             )

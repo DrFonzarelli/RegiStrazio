@@ -33,14 +33,16 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
@@ -95,6 +97,11 @@ fun TrackCard(
     /** Avanzamento e stato del download, `null` quando non c'è un download in corso. */
     scaricamento: StatoScaricamento?,
     mioAppUid: String,
+    /**
+     * Contatore che cambia quando la barra in ascolto chiede di aprire il
+     * riquadro del commento su questa traccia. `null` = nessuna richiesta.
+     */
+    apriCommento: Int? = null,
     azioni: TrackCardActions,
     onChiediEliminazione: (Commento) -> Unit,
     modifier: Modifier = Modifier
@@ -132,6 +139,35 @@ fun TrackCard(
         addBoxAperta = false
         idInModifica = null
         tempoBloccato = true
+    }
+
+    // Il tasto commento della barra in ascolto arriva qui: apre esattamente il
+    // riquadro che si aprirebbe premendo ✎ sulla card, senza una seconda UI.
+    //
+    // `rememberSaveable` e non `remember`: uscendo e rientrando nella lista la
+    // card viene distrutta e ricreata, e con essa il `LaunchedEffect`. Senza
+    // memoria di quale richiesta è già stata servita, il riquadro si riaprirebbe
+    // da solo ogni volta che si torna a scorrere lì sopra.
+    var richiestaServita by rememberSaveable { mutableStateOf(0) }
+    LaunchedEffect(apriCommento) {
+        if (apriCommento != null && apriCommento != richiestaServita) {
+            richiestaServita = apriCommento
+            indiceSelezionato = null
+            accordionAperto = false
+            apriAddBox(null)
+        }
+    }
+
+    // Minutaggio sbloccato: segue il cursore in tempo reale, come `setPct` nel
+    // prototipo (`if(!timeLocked) timeInput.value = ...`). Bloccato resta fermo
+    // sul punto in cui l'hai fissato — è tutto il senso del lucchetto.
+    //
+    // La chiave è l'etichetta e non i secondi grezzi: il cursore si aggiorna
+    // quattro volte al secondo, ma il minutaggio cambia una volta al secondo, e
+    // non vale la pena rilanciare un effetto per scrivere lo stesso testo.
+    val etichettaCursore = secToLabel(posizioneSecondi)
+    LaunchedEffect(etichettaCursore, tempoBloccato, addBoxAperta) {
+        if (addBoxAperta && !tempoBloccato) tempoInput = etichettaCursore
     }
 
     fun selezionaMarker(indice: Int) {
@@ -429,14 +465,28 @@ private fun FavButton(traccia: Traccia, onClick: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(3.dp)
     ) {
+        // `buildStarVisual` del prototipo: la stella piena sovrapposta a quella a
+        // contorno e tagliata con `clip-path: inset(0 50% 0 0)`.
+        //
+        // Prima il taglio era un `Box(Modifier.width(6.dp))` con dentro l'icona
+        // da 12dp: ma un vincolo di larghezza in Compose **rimpicciolisce** il
+        // figlio invece di nasconderne metà, e usciva una stellina storta. Qui si
+        // ritaglia in fase di disegno, che è quello che fa `clip-path`.
         Box(Modifier.size(12.dp)) {
             AppIcon(AppIcons.Star, 12.dp, tinta)
-            when (traccia.mioVoto) {
-                VotoStella.PIENA -> AppIcon(AppIcons.StarFilled, 12.dp, tinta)
-                VotoStella.MEZZA -> Box(Modifier.width(6.dp).height(12.dp).clipToBounds()) {
+            if (traccia.mioVoto != VotoStella.NESSUNO) {
+                val mezza = traccia.mioVoto == VotoStella.MEZZA
+                Box(
+                    Modifier
+                        .size(12.dp)
+                        .drawWithContent {
+                            clipRect(right = if (mezza) size.width / 2f else size.width) {
+                                this@drawWithContent.drawContent()
+                            }
+                        }
+                ) {
                     AppIcon(AppIcons.StarFilled, 12.dp, tinta)
                 }
-                VotoStella.NESSUNO -> Unit
             }
         }
         val punteggio = traccia.punteggio

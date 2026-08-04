@@ -111,8 +111,19 @@ fun AppRoot(
                     .ordinate(state.ordinamento)
                 val indice = tracce.indexOfFirst { it.id == id }
                 if (indice < 0) return@derivedStateOf false
+
                 // +1: il primo elemento della lista è la sort bar
-                listaTracce.layoutInfo.visibleItemsInfo.any { it.index == indice + 1 }
+                val info = listaTracce.layoutInfo
+                val card = info.visibleItemsInfo.find { it.index == indice + 1 }
+                    ?: return@derivedStateOf false
+
+                // Serve che se ne veda più di un terzo, come la soglia 0.35
+                // dell'IntersectionObserver nel prototipo. Con "anche un pixel
+                // basta" la barra sparirebbe quando della card si intravede solo
+                // il bordo, che è esattamente quando serve di più.
+                val visibile = minOf(card.offset + card.size, info.viewportEndOffset) -
+                    maxOf(card.offset, info.viewportStartOffset)
+                visibile > card.size * 0.35f
             }
         }
 
@@ -215,7 +226,10 @@ fun AppRoot(
                                 bulkInCorso = state.bulkDownload?.cartellaId == schermata.cartellaId,
                                 bulkInPausa = state.bulkInPausa == schermata.cartellaId,
                                 tracciaInRiproduzione = state.riproduzione.tracciaId,
+                                inRiproduzione = state.riproduzione.inRiproduzione,
                                 audioAttivo = state.riproduzione.audioAttivo,
+                                statoLista = listaTracce,
+                                apriCommentoPer = state.richiestaCommento,
                                 scaricamenti = state.scaricamenti,
                                 posizioneSecondi = state.riproduzione.posizioneSecondi,
                                 mioAppUid = state.identita?.appUid.orEmpty(),
@@ -269,7 +283,10 @@ fun AppRoot(
                         },
                         onTogglePlay = { vm.togglePlay(traccia.id) },
                         onCommenta = {
-                            vm.apriCartella(traccia.cartellaId)
+                            // Nessun riquadro tutto suo: ti porta sulla card e
+                            // apre quella vera, come il prototipo che preme il
+                            // `.add-btn`. Una UI in meno da tenere allineata.
+                            vm.chiediCommento(traccia.id)
                             scope.launch {
                                 val indice = state.tracce
                                     .filter { it.cartellaId == traccia.cartellaId }

@@ -144,6 +144,33 @@ si potrebbe solo far scorrere un'animazione a tempo. Per la lettura di una
 cartella MEGA, che è una chiamata sola, non c'è niente da misurare: lì non si
 mette nessuna barra.
 
+### La barra in ascolto: quando c'è e quando no
+
+`#mini-player` **non è una barra fissa**. Compare solo quando la card della
+traccia che stai ascoltando è uscita di vista, e serve a una cosa sola: riportarti
+lì. Con la card a schermo sarebbe un secondo tasto play accanto al primo, e i due
+si contraddirebbero a vicenda.
+
+Le regole, prese dal prototipo:
+
+- visibile solo se **meno di un terzo** della card è nel viewport
+  (`IntersectionObserver` con `threshold: 0.35`);
+- il collegamento fra barra e traccia **si spezza** nell'istante preciso in cui
+  sei in pausa *e* rivedi la card: a quel punto ti sei già ricongiunto con la
+  traccia guardandola, e allontanartene di nuovo non deve far ricomparire niente.
+  Se invece sta ancora suonando, rivedere la card la nasconde soltanto;
+- il tasto commento della barra **non ha un riquadro suo**: ti porta sulla card e
+  apre quella vera (nel prototipo, letteralmente `addBtn.click()`). Una UI in
+  meno da tenere allineata in due posti.
+
+Perché questo funzioni, lo `LazyListState` della lista deve essere **lo stesso**
+che legge chi decide se mostrare la barra. Vedi errore 20: per un po' non lo era.
+
+**`is-playing` si toglie alla pausa, non al cambio di traccia.** Bordo accent
+della card e tasto play pieno vogliono dire "sta suonando adesso", non "è la
+traccia selezionata". La posizione del cursore invece resta anche in pausa: è
+lì che sei rimasto.
+
 ### Ciclo di vita di una traccia
 
 Come si incastrano i tre pezzi, dall'inizio alla fine:
@@ -1287,6 +1314,85 @@ coda — ed è stato ristretto alle tracce **della sua cartella**, perché ferma
 "Scarica tutte" di una cartella non deve fermare un download avviato a mano in
 un'altra. Stessa correzione in `pausaDownload`, che metteva in pausa la coda
 anche quando la traccia toccata non le apparteneva.
+
+#### 20. Uno stato passato a nessuno resta vuoto per sempre
+
+*Sintomo:* la barra in ascolto stava **sempre** a schermo, anche con la card
+della traccia bene in vista, creando due tasti play in competizione. E "tocca per
+tornare alla traccia" non scorreva da nessuna parte.
+
+*Causa:* `AppRoot` creava un `LazyListState` e lo usava per calcolare se la card
+fosse visibile — ma non lo passava mai a `FolderScreen`, che creava la propria
+`LazyColumn` senza `state =`. Quello stato non era attaccato a nessuna lista:
+`visibleItemsInfo` restava vuoto per sempre, "card visibile" era sempre falso, e
+la barra non aveva mai motivo di sparire. `animateScrollToItem` su una lista
+inesistente non faceva niente, in silenzio.
+
+*Fix:* `statoLista` diventa un parametro di `FolderScreen`, e la visibilità si
+misura come nel prototipo — più di un terzo dell'altezza della card dentro il
+viewport (`threshold: 0.35` dell'IntersectionObserver), non "anche un pixel".
+
+*Da ricordare:* uno stato Compose che non è collegato a nessun componente non
+dà errore, non lancia niente, e risponde con valori vuoti perfettamente
+plausibili. Quando una logica che dipende da `layoutInfo` "non scatta mai",
+prima di studiare la logica va controllato che lo stato sia davvero quello della
+lista che si sta guardando.
+
+#### 21. Vincolare la larghezza non è ritagliare, e riempirla non è "quanto serve"
+
+Tre difetti di grafica con la stessa radice: **in Compose i vincoli di layout
+non fanno quello che fanno le proprietà CSS che gli assomigliano.**
+
+| Volevo | Avevo scritto | Cosa faceva davvero |
+|---|---|---|
+| mezza stella (`clip-path: inset(0 50% 0 0)`) | `Box(Modifier.width(6.dp))` con dentro l'icona da 12dp | il vincolo **rimpicciolisce** il figlio: una stellina da 6dp storta, non una stella tagliata a metà |
+| menu largo quanto serve (`min-width:190px`) | `widthIn(min = 190.dp)` + voci con `fillMaxWidth()` | dentro un `Popup` il vincolo massimo è **lo schermo**: "riempi la larghezza" prendeva tutto lo schermo |
+| alone del cursore (`box-shadow: 0 0 0 6px`) | `Modifier.border(6.dp, …)` | il bordo si disegna **dentro** i propri limiti: mangiava il pallino invece di circondarlo |
+| anelli del marker selezionato (due `box-shadow`) | `Modifier.border(2.dp, accent)` | idem: copriva l'iniziale, che è l'unica cosa da leggere |
+
+*Regola che ne esce:* **layout e disegno sono due cose diverse.** `width`,
+`fillMaxWidth`, `border` partecipano alla misurazione e vivono dentro i propri
+limiti. Ritagli, aloni e anelli che nel CSS escono dal box (`clip-path`,
+`box-shadow`, `position:absolute; inset:0`) in Compose si fanno **disegnando** —
+`drawWithContent { clipRect { … } }`, `drawBehind { drawCircle(…) }` — perché
+il disegno riceve il nodo già impaginato e può uscire dai suoi bordi.
+È la stessa lezione dell'errore 17, e ormai è la terza volta: se una cosa deve
+stare *sopra*, *sotto* o *fuori* dal contenuto, disegnala.
+
+#### 22. Un popup si chiude e si riapre nello stesso gesto
+
+*Sintomo:* ripremendo i puntini il kebab non si chiudeva, si riapriva.
+
+*Causa:* il tap fuori dal `Popup` fa scattare `onDismissRequest` **e** arriva
+comunque al tasto sotto. Chiusura e riapertura, un gesto solo. Nel prototipo il
+caso non esiste perché è un `if(is-open){ close; return; }` sullo stesso
+handler; qui i due eventi arrivano separati.
+
+*Fix:* si annota quando il popup si è chiuso e si ignora un tap sui puntini
+arrivato entro 250 ms.
+
+*Da ricordare:* quando due strati diversi reagiscono allo stesso tocco, non
+basta che ognuno faccia la cosa giusta: contano anche l'ordine e il fatto che
+sono **due** eventi. Vale anche per la z: nella timeline i marker stanno di
+proposito *sopra* la presa del cursore, così un tap su un commento non finisce
+in un trascinamento.
+
+#### 23. Il testo di un campo alto non si centra
+
+*Sintomo:* in "Scrivi un commento…" il segnaposto e il testo galleggiavano a
+metà altezza del riquadro.
+
+*Causa:* `AppTextField` centrava sempre in verticale. Su un campo a una riga è
+l'unica cosa sensata; su uno alto 56dp che accoglie più righe è sbagliato — e
+salta anche in su all'arrivo della seconda riga.
+
+*Fix:* con `singleLine = false` l'allineamento passa a `Alignment.Top` /
+`TopStart`, che è il comportamento di una `textarea` e di qualunque campo
+multiriga di sistema.
+
+*Da ricordare:* non c'è niente da inventare su un comportamento che ha già uno
+standard. Se un componente si scosta da quello che fa il resto del mondo, la
+domanda giusta è "perché?", non "come lo miglioro?".
 
 ---
 

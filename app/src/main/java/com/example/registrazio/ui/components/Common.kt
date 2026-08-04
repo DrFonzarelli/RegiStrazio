@@ -284,11 +284,21 @@ fun AppTextField(
         keyboardOptions = keyboardOptions,
         keyboardActions = keyboardActions,
         decorationBox = { inner ->
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            // Un campo che accoglie più righe parte in alto a sinistra, come una
+            // `textarea`: centrare il testo in un riquadro alto lo fa galleggiare
+            // e poi saltare in su quando arriva la seconda riga. Su una riga sola
+            // invece il centraggio è l'unica cosa che ha senso.
+            val allineaInAlto = !singleLine
+            Row(
+                verticalAlignment = if (allineaInAlto) Alignment.Top else Alignment.CenterVertically
+            ) {
                 Box(
                     Modifier.weight(1f),
-                    contentAlignment =
-                        if (textAlign == TextAlign.Center) Alignment.Center else Alignment.CenterStart
+                    contentAlignment = when {
+                        textAlign == TextAlign.Center -> Alignment.Center
+                        allineaInAlto -> Alignment.TopStart
+                        else -> Alignment.CenterStart
+                    }
                 ) {
                     if (value.isEmpty() && placeholder.isNotEmpty()) {
                         Text(placeholder, color = colors.textMuted, fontSize = fontSize)

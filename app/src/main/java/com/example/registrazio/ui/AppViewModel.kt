@@ -103,8 +103,22 @@ data class AppState(
      * "sì, in pausa" senza dire di quale accenderebbe il tasto anche nelle
      * cartelle che non c'entrano niente.
      */
-    val bulkInPausa: String? = null
+    val bulkInPausa: String? = null,
+    /** Vedi [RichiestaCommento]: la barra in ascolto chiede alla card di aprirsi. */
+    val richiestaCommento: RichiestaCommento? = null
 )
+
+/**
+ * Richiesta di aprire il riquadro del commento su una traccia.
+ *
+ * Arriva dalla barra in ascolto, che non ha un riquadro suo: ti porta sulla card
+ * e apre quella vera, come fa il prototipo premendo il `.add-btn`. Una
+ * scorciatoia in meno da tenere allineata in due posti.
+ *
+ * [seq] serve perché la richiesta è un evento, non uno stato: chiederlo due
+ * volte di fila sulla stessa traccia deve funzionare entrambe le volte.
+ */
+data class RichiestaCommento(val tracciaId: String, val seq: Int)
 
 /**
  * Un download che è a metà strada.
@@ -172,6 +186,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     /** File audio già sul telefono, per id traccia. */
     private val fileLocali = mutableMapOf<String, File>()
     private val jobDownload = mutableMapOf<String, Job>()
+
+    private var seqCommento = 1
 
     /** Tracce che lo "Scarica tutte" deve ancora smaltire, in ordine. */
     private var codaBulk = listOf<String>()
@@ -371,6 +387,20 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun tornaHome() = _state.update { it.copy(schermata = Schermata.Home) }
+
+    /**
+     * Il tasto commento della barra in ascolto: porta sulla cartella giusta e
+     * chiede alla card di aprire il suo riquadro.
+     */
+    fun chiediCommento(tracciaId: String) {
+        val traccia = traccia(tracciaId) ?: return
+        _state.update {
+            it.copy(
+                schermata = Schermata.DettaglioCartella(traccia.cartellaId),
+                richiestaCommento = RichiestaCommento(tracciaId, seqCommento++)
+            )
+        }
+    }
 
     fun cambiaOrdinamento() = _state.update {
         it.copy(

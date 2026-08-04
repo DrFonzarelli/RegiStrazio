@@ -13,10 +13,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.ui.unit.IntrinsicSize
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -57,6 +59,13 @@ fun TrackMenu(
     val density = LocalDensity.current
     var aperto by remember { mutableStateOf(false) }
 
+    // Il tap fuori dal popup lo chiude **e** arriva comunque al tasto sotto: il
+    // menu si richiuderebbe e riaprirebbe nello stesso gesto, e sembrerebbe che
+    // non si chiuda mai. Nel prototipo lo stesso caso è gestito con
+    // `if(is-open){ close; return; }` — qui serve sapere *quando* si è chiuso,
+    // perché i due eventi arrivano separati.
+    var chiusoIl by remember { mutableLongStateOf(0L) }
+
     Box(modifier) {
         Box(
             Modifier
@@ -65,7 +74,10 @@ fun TrackMenu(
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null
-                ) { aperto = true },
+                ) {
+                    if (aperto) aperto = false
+                    else if (System.currentTimeMillis() - chiusoIl > SOGLIA_RIAPERTURA) aperto = true
+                },
             contentAlignment = Alignment.Center
         ) {
             AppIcon(AppIcons.More, 15.dp, colors.textMuted)
@@ -75,15 +87,28 @@ fun TrackMenu(
             Popup(
                 alignment = Alignment.TopEnd,
                 offset = IntOffset(0, with(density) { 39.dp.roundToPx() }),
-                onDismissRequest = { aperto = false }
+                onDismissRequest = {
+                    aperto = false
+                    chiusoIl = System.currentTimeMillis()
+                }
             ) {
                 Column(
                     Modifier
+                        // `min-width:190px` e nient'altro: il menu è largo quanto
+                        // la sua voce più lunga.
+                        //
+                        // Prima prendeva tutta la larghezza dello schermo. La
+                        // colpa era del `fillMaxWidth()` sulle voci: dentro un
+                        // Popup il vincolo massimo è lo schermo intero, quindi
+                        // "riempi la larghezza" voleva dire proprio quello.
+                        // `width(IntrinsicSize.Max)` fissa prima la larghezza del
+                        // menu, e le voci riempiono quella.
+                        .widthIn(min = 190.dp)
+                        .width(IntrinsicSize.Max)
                         .shadow(10.dp, RoundedCornerShape(11.dp))
                         .clip(RoundedCornerShape(11.dp))
                         .background(colors.surface)
                         .appBorder(colors.border, 11.dp)
-                        .widthIn(min = 190.dp)
                         .padding(4.dp)
                 ) {
                     MenuItem(
@@ -135,3 +160,11 @@ private fun MenuItem(icona: AppIconSpec, etichetta: String, onClick: () -> Unit)
         Text(etichetta, color = colors.text, fontSize = 13.5.sp)
     }
 }
+
+/**
+ * Quanto ignorare un tap sui puntini dopo che il popup si è chiuso da solo.
+ *
+ * Abbastanza da coprire i due eventi dello stesso gesto, abbastanza poco da non
+ * farsi sentire da chi vuole davvero riaprire il menu.
+ */
+private const val SOGLIA_RIAPERTURA = 250L
