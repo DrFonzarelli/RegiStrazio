@@ -124,6 +124,15 @@ riempimento dietro la card, ed è stata tolta: su una card alta e piena di
 contenuto quel movimento distrae senza aggiungere niente che il numero non dica
 già. Il riempimento resta dov'era nel prototipo, sul tasto "Scarica tutte".
 
+Per lo stesso motivo **la card di una traccia che sta scaricando non cambia
+bordo**: il bordo accent vuol dire "questa è la traccia che stai ascoltando", e
+si può benissimo scaricarne una mentre se ne ascolta un'altra. Due card accese
+per due motivi diversi dicono meno di una accesa per un motivo solo.
+
+L'icona accanto alla percentuale dice **cosa succede se la tocchi**, non in che
+stato sei: ⏸ mentre scarica, ▶ quando è ferma. Non è mai una ✕ — non c'è niente
+da annullare, il pezzo già scaricato resta.
+
 Quella barra però non deve avanzare **a scatti di una traccia**: con download
 veri resterebbe ferma per decine di secondi e poi salterebbe. Somma anche la
 frazione dei download in corso, quindi scorre di continuo restando una misura
@@ -470,16 +479,44 @@ Implementare questo nel `Player.Listener.onPlayerError`.
 Triggered dal tasto download nella track card o da "Scarica tutte" nella sort bar,
 come nel prototipo.
 
-Flusso:
+Flusso reale (`data/remote/ScaricatoreMega.kt`):
 1. Richiedere URL temporaneo MEGA per la traccia.
-2. Avviare download con `DownloadManager` di sistema (notifica di progresso nativa).
-3. Al completamento (`ACTION_DOWNLOAD_COMPLETE`): spostare il file in
-   `context.cacheDir/audio/{tracciaId}.{estensione}` e inserire record in
-   `Room.TracceDownload`.
-4. Aggiornare UI della track card: icona download → icona file locale.
+2. Scaricare con OkHttp **decifrando in corsa** (AES-CTR) dentro
+   `cacheDir/audio/{tracciaId}.audio.parziale`.
+3. A file completo, rinominare in `{tracciaId}.audio` e registrare la riga in
+   `Room.download`.
+4. La track card passa dalla percentuale all'icona di file locale.
+
+> **Non si usa il `DownloadManager` di sistema**, che pure una versione
+> precedente di questo documento suggeriva: non sa niente di AES e salverebbe su
+> disco byte cifrati, cioè un file che non suona.
+
+**Pausa e ripresa.** Il download si può fermare e far ripartire da dove era:
+- interrompere **non** cancella il `.parziale` — è tutto il senso della ripresa;
+- alla ripresa si tronca il parziale al multiplo di 16 più vicino
+  (`allineaABlocco`) e si chiede a MEGA solo il resto con `Range: bytes=N-`;
+- l'IV di CTR per ripartire da `N` si calcola con `MegaCrypto.ivPerOffset`, la
+  stessa funzione che rende possibile il seek in streaming;
+- se il server risponde `200` invece di `206` (Range ignorato) il parziale si
+  butta e si ricomincia: appendere tutto il file a un parziale lo raddoppierebbe.
+
+**Chi mette in pausa cosa** — è il modello mentale, e va rispettato:
+
+| Gesto | Effetto |
+|---|---|
+| ⏸ sulla percentuale di una traccia | ferma quella traccia **e** la coda "Scarica tutte", se c'era |
+| ▶ sulla percentuale di una traccia | riprende **solo quella**; la coda resta ferma |
+| tasto "Scarica tutte" durante il download | mette in pausa tutto |
+| tasto "Scarica tutte" da fermo a metà | riprende la coda da dove era |
+
+Il file a metà è **solo sul telefono**: non si rischia di pubblicare un file
+troncato, e una traccia scaricata a metà continua a suonare in streaming da MEGA
+finché non è completa.
 
 **Eliminazione file locale:** menu "..." → "Rimuovi dal telefono". Elimina il file
-fisico e il record Room. Al prossimo play torna lo streaming automaticamente.
+fisico e il record Room. Al prossimo play torna lo streaming automaticamente — e
+se la traccia era **in ascolto proprio in quel momento**, riparte da MEGA dallo
+stesso punto senza che si senta niente (vedi errore 15).
 
 I file scaricati non vengono eliminati automaticamente dall'app.
 
@@ -593,10 +630,42 @@ riprovare dal log pending.
 - Premere Sincronizza → mostra messaggio: *"Sei offline. I tuoi commenti
   verranno caricati alla prossima sincronizzazione."*
 
+### Il messaggio quando manca la linea
+
+Una frase sola, uguale ovunque manchi la rete — play, download, coda "Scarica
+tutte" — perché ripetuta identica si riconosce a colpo d'occhio:
+
+> Sei senza rete. L'audio si ascolta da MEGA: scarica le tracce sul telefono
+> quando hai linea e poi le hai anche offline.
+
+Vive in `AppViewModel.SENZA_RETE` e la sceglie `spiegaErroreDiRete(e)`.
+
+**Come si riconosce l'assenza di linea:** dal **tipo dell'eccezione**, scendendo
+lungo la catena delle cause (`UnknownHostException`, `ConnectException`,
+`SocketTimeoutException`, …). Non si legge lo stato della connessione: servirebbe
+`ACCESS_NETWORK_STATE`, e comunque una rete "attiva" dietro un portale captive
+fallisce esattamente come una assente — l'eccezione dice la verità, lo stato di
+sistema no.
+
+Perché questo funzioni, **chi incarta un errore deve conservarne la causa**:
+`MegaException` ha un terzo parametro `cause` e `MegaApi` lo passa. Un `catch`
+che ributta un messaggio senza la causa originale rende il messaggio offline
+impossibile da distinguere da un errore qualsiasi di MEGA.
+
+Stesso motivo per cui `PlayerMega.onErrore` passa il `Throwable` e non una
+stringa già formattata: lì dentro non si sa se è la rete o il file, e a scegliere
+le parole deve essere chi conosce il contesto.
+
+Quando la coda "Scarica tutte" incontra l'assenza di rete **si ferma e resta in
+pausa**, invece di provare le altre quattro tracce e sfilare quattro errori
+identici.
+
 ### Indicatore offline nell'UI
 
 Banner non bloccante sotto la topbar: *"Offline — dati dell'ultima
 sincronizzazione"*. Sparisce quando torna la connessione. Nessun dialog.
+**Non ancora implementato**; per ora il messaggio arriva come toast al momento
+del gesto che fallisce, che è il momento in cui serve.
 
 ---
 
@@ -782,7 +851,7 @@ ragione questa parte.
 
 ### Memoria delle versioni
 
-Aggiornata al commit `dd819f5`. Fonte di verità: `gradle/libs.versions.toml`
+Fonte di verità: `gradle/libs.versions.toml`
 e `app/build.gradle.kts` — se modifichi lì, aggiorna anche qui.
 
 | Cosa | Versione | Dove |
@@ -838,24 +907,26 @@ perché la BOM non le mostra): Firestore `26.5.0`, Auth `24.2.0`.
 | Riproduzione audio da MEGA | ✅ | **provata**: audio, seek dai commenti, pausa/riprendi |
 | Riproduzione tracce demo | 🟡 | restano sul timer finto: non hanno un file dietro |
 | Collegamento di una cartella MEGA | ✅ | **provato su una cartella vera**; ricollegare la stessa cartella la ricarica |
-| Condivisione da MEGA verso l'app | 🟡 | share sheet + tasto MEGA: **compila, da provare sul telefono** |
+| Condivisione da MEGA verso l'app | ✅ | **provata**: da app aperta e chiusa, e due volte con lo stesso link |
 | Durata delle tracce da MEGA | 🟡 | arriva al primo play di *quella* traccia; le altre restano `--:--` |
 | Nome della cartella letto da MEGA | ✅ | risolto provando tutti i nodi non-file, vedi errore 7 |
 | Waveform | 🟡 | equalizzatore animato decorativo, nessun dato reale |
-| Archivio locale (Room) | 🟡 | cartelle, tracce e commenti con stato di sincronizzazione: **compila, da provare sul telefono** |
+| Archivio locale (Room) | ✅ | **provato**: commenti, stelle e rinomine sopravvivono alla chiusura |
 | Elenco profili per il recupero account | 🟡 | `ProfiliStore` = SharedPreferences + Gson, unico resto del cloud simulato |
 | Firestore | ❌ | dipendenza presente, **mai importata** nel codice |
 | Firebase Anonymous Auth | ❌ | mai inizializzata |
-| MEGA HTTP API + crypto | 🟡 | elenco e decifratura **verificati sul campo**; manca lo scarico dei byte |
+| MEGA HTTP API + crypto | ✅ | elenco, decifratura e scarico dei byte **verificati sul campo** |
 | Tasto Sincronizza | ❌ | |
-| Banner offline | ❌ | |
-| Download reale su disco | 🟡 | scarica e decifra davvero, con avanzamento: **compila, da provare** |
-| Riproduzione dal file locale | 🟡 | se la traccia è sul telefono si suona da lì, senza rete |
+| Banner offline | ❌ | c'è il messaggio al gesto che fallisce, non il banner permanente |
+| Download reale su disco | ✅ | **provato**: scarica, decifra, suona da locale, si rimuove |
+| Pausa e ripresa del download | 🟡 | `.parziale` + `Range`: **compila, da provare sul telefono** |
+| Riproduzione dal file locale | ✅ | **provata**, anche togliendo il file mentre suona |
 
 Detto in modo diretto, perché sono le domande che vengono naturali:
-**il link MEGA collega davvero** e l'audio si sente; **i commenti non arrivano
-ancora su Firestore**, ma da ora restano sul telefono in attesa invece di
-sparire; **il download non scarica niente**, cambia solo un'icona.
+**il link MEGA collega davvero**, l'audio si sente, **le tracce si scaricano
+davvero** e da scaricate suonano dal telefono senza rete; **i commenti non
+arrivano ancora su Firestore**, ma restano sul telefono in attesa invece di
+sparire.
 
 **Il bug delle tracce che sparivano alla chiusura è chiuso**, e con esso una mia
 lettura sbagliata: l'avevo trattato come qualcosa che si sarebbe risolto da sé
@@ -863,11 +934,9 @@ con Firestore. Non era così — mancava la persistenza locale, che deve esister
 **prima** e **indipendentemente** da Firestore. Vedi la seconda regola in cima al
 documento.
 
-**Stato della build:** l'ultima build ha superato `kspDebugKotlin`,
-`processDebugGoogleServices` e tutto il packaging delle risorse, e si è fermata
-in `compileDebugKotlin` su due errori in `GateScreen.kt`. Quegli errori sono
-corretti in `dd819f5`, **ma una build completamente verde non è ancora stata
-osservata**. Finché non lo è, non dare per scontato che compili.
+**Stato della build:** verde, e l'app gira su un telefono vero. L'ultima cosa
+non ancora provata sul telefono è la pausa/ripresa dei download, arrivata dopo
+l'ultima sessione di prova.
 
 ---
 
@@ -1122,6 +1191,61 @@ sperimentale e avvisa che il default è ormai `true`. Andrà rimossa quando KSP 
 AGP si allineeranno; se un giorno l'opzione sparisce, il warning va risolto
 davvero, non silenziato.
 
+#### 17. `fillMaxHeight()` dentro un Box che non ha un'altezza
+
+*Sintomo:* il riempimento del tasto "Scarica tutte" **non si vedeva affatto**.
+Non pallido, non parziale: assente. Segnalato due volte prima che lo prendessi
+sul serio.
+
+*Causa:* il riempimento era un `Box` figlio con
+`Modifier.fillMaxHeight().fillMaxWidth(frazione)`. `fillMaxHeight` significa
+"prendi tutta l'altezza *disponibile*", e l'altezza disponibile la fissa il
+genitore. Ma il genitore era un `Box` senza altezza propria, che la ricavava dal
+contenuto: al momento del calcolo l'altezza disponibile era **zero**. Un
+rettangolo largo il giusto e alto zero è invisibile, e il codice sembrava
+corretto rileggendolo.
+
+*Fix:* il riempimento si **disegna**, non si impagina —
+`.drawBehind { drawRect(accentSoft, size = Size(size.width * frazione, size.height)) }`
+sul Box esterno, dopo `.clip()` e `.background()`. `drawBehind` riceve la
+dimensione del nodo **già impaginato**, che è esattamente la semantica di
+`position:absolute; top:0; bottom:0` del prototipo.
+
+*Da ricordare:* due cose diverse.
+1. In Compose, `fillMax*` è una richiesta al genitore, non una promessa. Dentro
+   un contenitore che si dimensiona sul contenuto, non vale niente. Se una cosa
+   deve stare *dietro* al contenuto e coprirlo tutto, disegnala.
+2. Quando qualcuno dice per la seconda volta che una cosa non si vede, il
+   problema è mio, non della sua osservazione. La prima volta avevo risposto che
+   era "già implementato come nel prototipo" — lo era nel codice, non sullo
+   schermo. Il codice che sembra giusto e non si vede è codice sbagliato.
+
+#### 18. Interrompere un download non deve voler dire buttarlo
+
+*Sintomo:* fermare uno scaricamento e riaverlo faceva ripartire tutto da zero. E
+mettendo in pausa una traccia dentro "Scarica tutte" la coda continuava per conto
+suo, riscaricando a forza quella appena fermata.
+
+*Causa:* "interrompi" era implementato come `cancel()` + cancellazione del file
+parziale, e la coda non sapeva niente di quello che succedeva alle singole
+tracce.
+
+*Fix:* due pezzi.
+- `ScaricatoreMega` **non cancella più il `.parziale`** quando il job viene
+  interrotto; alla ripresa tronca a un confine di 16 byte e chiede il resto con
+  `Range`. La ripresa è possibile grazie alla stessa proprietà di AES-CTR che
+  rende possibile il seek: si può cominciare a decifrare da qualunque punto,
+  purché si sappia da quale.
+- Lo stato passa da `Float` a `StatoScaricamento(frazione, inPausa)`, e mettere
+  in pausa una traccia mette in pausa **anche** la coda. Riprendere dalla traccia
+  riprende solo quella; riprendere dal tasto in alto riprende tutto.
+
+*Da ricordare:* "annulla" e "metti in pausa" sembrano la stessa cosa da
+programmare e sono l'opposto per chi le usa. Prima di scrivere `cancel()`,
+chiedersi se chi tocca quel tasto vuole **rinunciare** o vuole **fermarsi**. Su
+un download di decine di megabyte in mobilità la risposta è quasi sempre la
+seconda, e va sostenuta anche se costa un file temporaneo in più.
+
 ---
 
 ### Trappole del progetto da tenere a mente
@@ -1165,9 +1289,13 @@ Cose consapevolmente lasciate indietro, da affrontare quando conviene:
 - **`navigation-compose` è dichiarata e mai usata.** La navigazione è fatta a
   mano con la sealed interface `Schermata`. O si toglie la dipendenza, o si
   decide di adottarla davvero.
-- **Room e OkHttp sono dichiarate e mai usate.** Legittimo finché arrivano le
-  fasi che le richiedono; `kspDebugKotlin` intanto gira a vuoto perché non c'è
-  nessuna annotazione da processare.
+- **Un download in pausa non sopravvive alla chiusura dell'app.** Il file
+  `.parziale` resta su disco e la ripresa *funziona* — il download successivo
+  riparte da lì invece che da zero — ma la percentuale non si rivede: lo stato
+  `scaricamenti` vive in memoria. Per mostrarla servirebbe la dimensione totale
+  del file, che oggi non è in `TracciaEntity`. Costo: una colonna in più e una
+  migrazione. Nel frattempo il comportamento è comunque quello giusto, solo
+  silenzioso.
 - **Versioni sparse.** Room, Media3, OkHttp, Gson, coroutines e security-crypto
   sono ancora scritte a mano in `app/build.gradle.kts` invece che nel catalog.
 - **`applicationId` è ancora `com.example.registrazio`**, il default di Android

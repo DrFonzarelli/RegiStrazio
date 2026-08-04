@@ -213,13 +213,25 @@ fun AppRoot(
                                 ordinamento = state.ordinamento,
                                 scaricateSuTotali = scaricate to tracce.size,
                                 bulkInCorso = state.bulkDownload?.cartellaId == schermata.cartellaId,
+                                bulkInPausa = state.bulkInPausa == schermata.cartellaId,
                                 tracciaInRiproduzione = state.riproduzione.tracciaId,
                                 audioAttivo = state.riproduzione.audioAttivo,
                                 scaricamenti = state.scaricamenti,
                                 posizioneSecondi = state.riproduzione.posizioneSecondi,
                                 mioAppUid = state.identita?.appUid.orEmpty(),
                                 onCambiaOrdinamento = vm::cambiaOrdinamento,
-                                onScaricaTutte = { confermaBulk = schermata.cartellaId },
+                                onScaricaTutte = {
+                                    // La conferma serve solo per far partire un
+                                    // download che non c'è: mettere in pausa o
+                                    // riprendere non consuma niente di nuovo, e
+                                    // farsi chiedere "sei sicuro?" per fermarsi
+                                    // sarebbe solo un tap in mezzo ai piedi.
+                                    val giaAvviato =
+                                        state.bulkDownload?.cartellaId == schermata.cartellaId ||
+                                            state.bulkInPausa == schermata.cartellaId
+                                    if (giaAvviato) vm.scaricaTutte(schermata.cartellaId)
+                                    else confermaBulk = schermata.cartellaId
+                                },
                                 azioniPerTraccia = { traccia ->
                                     azioniPer(traccia, vm) { dettagli = traccia }
                                 },

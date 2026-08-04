@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
 import com.example.registrazio.data.model.Traccia
+import com.example.registrazio.ui.StatoScaricamento
 import com.example.registrazio.ui.components.appBorder
 import com.example.registrazio.ui.theme.AppIcon
 import com.example.registrazio.ui.theme.AppIconSpec
@@ -46,7 +47,7 @@ import com.example.registrazio.ui.theme.AppTheme
 @Composable
 fun TrackMenu(
     traccia: Traccia,
-    inDownload: Boolean,
+    scaricamento: StatoScaricamento?,
     onCambiaDownload: () -> Unit,
     onRinomina: () -> Unit,
     onDettagli: () -> Unit,
@@ -86,12 +87,18 @@ fun TrackMenu(
                         .padding(4.dp)
                 ) {
                     MenuItem(
-                        icona = if (traccia.scaricata) AppIcons.CloudDone else AppIcons.Cloud,
+                        icona = when {
+                            scaricamento != null -> AppIcons.Cloud
+                            traccia.scaricata -> AppIcons.CloudDone
+                            else -> AppIcons.Cloud
+                        },
                         etichetta = when {
-                            // Tre stati, non due: durante lo scaricamento
-                            // "Scarica in locale" sarebbe una bugia, e non
-                            // direbbe come fermarsi.
-                            inDownload -> "Interrompi scaricamento"
+                            // Quattro stati, non due: durante lo scaricamento
+                            // "Scarica sul telefono" sarebbe una bugia e non
+                            // direbbe come fermarsi; a download fermo la voce
+                            // deve offrire la ripresa, non un nuovo inizio.
+                            scaricamento?.inPausa == true -> "Riprendi scaricamento"
+                            scaricamento != null -> "Interrompi scaricamento"
                             traccia.scaricata -> "Rimuovi dal telefono"
                             else -> "Scarica sul telefono"
                         }

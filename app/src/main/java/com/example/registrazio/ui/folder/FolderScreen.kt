@@ -1,5 +1,8 @@
 package com.example.registrazio.ui.folder
 
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -9,7 +12,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -18,16 +20,20 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.registrazio.data.model.Commento
 import com.example.registrazio.data.model.Traccia
 import com.example.registrazio.ui.Ordinamento
+import com.example.registrazio.ui.StatoScaricamento
 import com.example.registrazio.ui.components.appBorder
 import com.example.registrazio.ui.theme.AppIcon
 import com.example.registrazio.ui.theme.AppIcons
@@ -43,9 +49,10 @@ fun FolderScreen(
     ordinamento: Ordinamento,
     scaricateSuTotali: Pair<Int, Int>,
     bulkInCorso: Boolean,
+    bulkInPausa: Boolean,
     tracciaInRiproduzione: String?,
     audioAttivo: Boolean,
-    scaricamenti: Map<String, Float>,
+    scaricamenti: Map<String, StatoScaricamento>,
     posizioneSecondi: Float,
     mioAppUid: String,
     onCambiaOrdinamento: () -> Unit,
@@ -64,8 +71,9 @@ fun FolderScreen(
                 // Somma le frazioni dei download in corso: senza, la barra
                 // resterebbe ferma per tutta una traccia e poi salterebbe di
                 // colpo. È comunque una misura vera, solo più fine.
-                parzialeInCorso = scaricamenti.values.sum(),
+                parzialeInCorso = scaricamenti.values.map { it.frazione }.sum(),
                 inCorso = bulkInCorso,
+                inPausa = bulkInPausa,
                 onCambiaOrdinamento = onCambiaOrdinamento,
                 onScaricaTutte = onScaricaTutte
             )
@@ -99,6 +107,7 @@ private fun SortBar(
     totali: Int,
     parzialeInCorso: Float,
     inCorso: Boolean,
+    inPausa: Boolean,
     onCambiaOrdinamento: () -> Unit,
     onScaricaTutte: () -> Unit
 ) {
@@ -107,7 +116,7 @@ private fun SortBar(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        BulkDownloadButton(scaricate, totali, parzialeInCorso, inCorso, onScaricaTutte)
+        BulkDownloadButton(scaricate, totali, parzialeInCorso, inCorso, inPausa, onScaricaTutte)
         SortToggle(ordinamento, onCambiaOrdinamento)
     }
 }
@@ -122,26 +131,50 @@ private fun BulkDownloadButton(
     totali: Int,
     parzialeInCorso: Float,
     inCorso: Boolean,
+    inPausa: Boolean,
     onClick: () -> Unit
 ) {
     val colors = AppTheme.colors
     val complete = totali > 0 && scaricate >= totali
-    val evidenziato = inCorso || complete
+    val evidenziato = inCorso || inPausa || complete
     val frazione =
         if (totali == 0) 0f
         else ((scaricate + parzialeInCorso) / totali).coerceIn(0f, 1f)
 
+    // `transition: width .35s linear` del prototipo. Lineare e non elastica: è
+    // una misura, e una misura non deve rimbalzare.
+    val riempimento by animateFloatAsState(
+        targetValue = frazione,
+        animationSpec = tween(350, easing = LinearEasing),
+        label = "riempimentoBulk"
+    )
+
     val etichetta = when {
         complete -> "Tutte scaricate"
-        scaricate > 0 -> "$scaricate/$totali scaricate"
+        inPausa -> "Riprendi $scaricate/$totali"
+        scaricate > 0 || inCorso -> "$scaricate/$totali scaricate"
         else -> "Scarica tutte"
     }
+
+    val tinta = if (evidenziato) colors.accent else colors.textSecondary
 
     Box(
         Modifier
             .width(148.dp)
             .clip(Radius.pillShape)
             .background(colors.surface)
+            // Il riempimento si disegna, non si impagina.
+            //
+            // Prima era un `Box` figlio con `fillMaxHeight()`: dentro un Box che
+            // prende l'altezza dal testo, "tutta l'altezza disponibile" vale
+            // zero, e infatti non si vedeva niente. `drawBehind` misura il nodo
+            // già impaginato, che è esattamente ciò che fa `position:absolute;
+            // top:0; bottom:0` nel prototipo.
+            .drawBehind {
+                if (riempimento > 0f) {
+                    drawRect(colors.accentSoft, size = Size(size.width * riempimento, size.height))
+                }
+            }
             .border(
                 1.dp,
                 if (evidenziato) colors.accent else colors.borderStrong,
@@ -152,20 +185,24 @@ private fun BulkDownloadButton(
                 indication = null,
                 onClick = onClick
             )
+            .padding(horizontal = 12.dp, vertical = 6.dp)
     ) {
-        Box(
-            Modifier
-                .fillMaxHeight()
-                .fillMaxWidth(frazione)
-                .background(colors.accentSoft)
-        )
         Row(
-            Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            val tinta = if (evidenziato) colors.accent else colors.textSecondary
-            AppIcon(if (complete) AppIcons.CloudDone else AppIcons.Cloud, 14.dp, tinta)
+            // L'icona dice cosa succede se lo tocchi: pausa mentre scarica,
+            // play quando è fermo a metà.
+            AppIcon(
+                when {
+                    complete -> AppIcons.CloudDone
+                    inCorso -> AppIcons.Pause
+                    inPausa -> AppIcons.Play
+                    else -> AppIcons.Cloud
+                },
+                14.dp,
+                tinta
+            )
             Text(
                 etichetta,
                 color = tinta,

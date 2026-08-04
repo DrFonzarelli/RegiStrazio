@@ -1,6 +1,7 @@
 package com.example.registrazio.domain.player
 
 import android.content.Context
+import android.util.Log
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -38,8 +39,14 @@ class PlayerMega(context: Context) {
     /** Chiamato quando il brano finisce da solo. */
     var onFine: (() -> Unit)? = null
 
-    /** Chiamato se la riproduzione fallisce, col messaggio da mostrare. */
-    var onErrore: ((String) -> Unit)? = null
+    /**
+     * Chiamato se la riproduzione fallisce, con l'eccezione vera.
+     *
+     * Si passa l'eccezione e non una frase già fatta perché qui non si sa se il
+     * problema è la rete assente o il file: la catena delle cause lo dice, e a
+     * scegliere le parole è chi conosce il contesto.
+     */
+    var onErrore: ((Throwable) -> Unit)? = null
 
     private var durataNotificata = 0
 
@@ -51,7 +58,8 @@ class PlayerMega(context: Context) {
             }
 
             override fun onPlayerError(errore: PlaybackException) {
-                onErrore?.invoke("Non riesco a riprodurre la traccia: ${errore.errorCodeName}")
+                Log.w(TAG, "riproduzione fallita: ${errore.errorCodeName}")
+                onErrore?.invoke(errore)
             }
         })
     }
@@ -121,4 +129,8 @@ class PlayerMega(context: Context) {
         get() = player.isPlaying
 
     fun rilascia() = player.release()
+
+    private companion object {
+        const val TAG = "PlayerMega"
+    }
 }

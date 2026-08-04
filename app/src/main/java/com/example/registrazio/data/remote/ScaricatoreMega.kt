@@ -7,6 +7,7 @@ import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
+import java.io.RandomAccessFile
 import java.util.concurrent.TimeUnit
 import javax.crypto.Cipher
 import javax.crypto.spec.IvParameterSpec
@@ -19,6 +20,11 @@ import javax.crypto.spec.SecretKeySpec
  * sa niente di AES e salverebbe su disco byte cifrati, cioè un file che non
  * suona. Decifrando qui, quello che finisce in `cacheDir/audio/` è un file
  * audio normale — e la riproduzione locale non deve sapere niente di MEGA.
+ *
+ * **Il download si può interrompere e riprendere.** Il pezzo già scaricato
+ * resta in un file `.parziale` e alla ripresa si chiede a MEGA solo il resto.
+ * Funziona grazie alla stessa proprietà di AES-CTR che rende possibile il seek:
+ * la decifratura può cominciare da qualunque punto, purché si sappia da quale.
  */
 class ScaricatoreMega(
     private val megaApi: MegaApi,
@@ -30,12 +36,16 @@ class ScaricatoreMega(
         .build()
 ) {
 
+    /** Il file dove si accumula un download non ancora finito. */
+    private fun parzialeDi(destinazione: File): File =
+        File(destinazione.absolutePath + ".parziale")
+
     /**
      * Scarica [handle] dentro [destinazione], riportando l'avanzamento da 0 a 1.
      *
-     * Scrive prima su un file temporaneo e rinomina solo alla fine: se il
-     * download si interrompe — rete caduta, app chiusa, utente che annulla —
-     * non deve restare mezzo brano che sembra completo.
+     * Se esiste già un `.parziale` riprende da lì. Interrompere il job **non**
+     * cancella quel file: è tutto il senso della ripresa. A buttarlo è solo chi
+     * rinuncia davvero al download.
      */
     suspend fun scarica(
         link: LinkMega,
@@ -44,61 +54,89 @@ class ScaricatoreMega(
         destinazione: File,
         onProgresso: (Float) -> Unit
     ): Unit = withContext(Dispatchers.IO) {
-        val url = megaApi.urlDiDownload(link, handle)
-
         destinazione.parentFile?.mkdirs()
-        val parziale = File(destinazione.absolutePath + ".parziale")
+        val parziale = parzialeDi(destinazione)
 
-        val cifrario = Cipher.getInstance("AES/CTR/NoPadding").apply {
-            init(
-                Cipher.DECRYPT_MODE,
-                SecretKeySpec(chiave.aes, "AES"),
-                IvParameterSpec(MegaCrypto.ivPerOffset(chiave.nonce, 0))
-            )
-        }
+        // Si riprende solo da un confine di blocco: così l'IV di CTR si calcola
+        // esattamente e non resta mezzo blocco da riallineare.
+        var daByte = allineaABlocco(parziale)
 
-        try {
-            client.newCall(Request.Builder().url(url).build()).execute().use { risposta ->
-                if (!risposta.isSuccessful) {
-                    throw MegaException(null, "MEGA ha risposto con un errore HTTP ${risposta.code}.")
-                }
-                val corpo = risposta.body
-                    ?: throw MegaException(null, "MEGA non ha mandato il contenuto del file.")
+        val url = megaApi.urlDiDownload(link, handle)
+        val richiesta = Request.Builder()
+            .url(url)
+            .apply { if (daByte > 0) header("Range", "bytes=$daByte-") }
+            .build()
 
-                val totale = corpo.contentLength()
-                var scaricati = 0L
-                val tampone = ByteArray(64 * 1024)
+        client.newCall(richiesta).execute().use { risposta ->
+            if (!risposta.isSuccessful) {
+                throw MegaException(null, "MEGA ha risposto con un errore HTTP ${risposta.code}.")
+            }
+            // Abbiamo chiesto un pezzo e ci hanno dato tutto il file: appenderlo
+            // al parziale lo raddoppierebbe. Si ricomincia da capo.
+            if (daByte > 0 && risposta.code != 206) {
+                parziale.delete()
+                daByte = 0
+            }
 
-                corpo.byteStream().use { entrata ->
-                    parziale.outputStream().buffered().use { uscita ->
+            val corpo = risposta.body
+                ?: throw MegaException(null, "MEGA non ha mandato il contenuto del file.")
+
+            val totale = if (corpo.contentLength() > 0) corpo.contentLength() + daByte else -1L
+
+            val cifrario = Cipher.getInstance("AES/CTR/NoPadding").apply {
+                init(
+                    Cipher.DECRYPT_MODE,
+                    SecretKeySpec(chiave.aes, "AES"),
+                    IvParameterSpec(MegaCrypto.ivPerOffset(chiave.nonce, daByte))
+                )
+            }
+
+            var scritti = daByte
+            val tampone = ByteArray(64 * 1024)
+
+            corpo.byteStream().use { entrata ->
+                java.io.FileOutputStream(parziale, /* append = */ daByte > 0).buffered()
+                    .use { uscita ->
                         while (currentCoroutineContext().isActive) {
                             val letti = entrata.read(tampone)
                             if (letti <= 0) break
                             uscita.write(cifrario.update(tampone, 0, letti))
-                            scaricati += letti
-                            if (totale > 0) onProgresso((scaricati.toFloat() / totale).coerceIn(0f, 1f))
+                            scritti += letti
+                            if (totale > 0) {
+                                onProgresso((scritti.toFloat() / totale).coerceIn(0f, 1f))
+                            }
                         }
-                        // CTR non ha padding, quindi `doFinal` non produce quasi
-                        // mai byte: si scrive comunque, per non perdere una coda.
                         cifrario.doFinal().takeIf { it.isNotEmpty() }?.let { uscita.write(it) }
                     }
-                }
-
-                if (!currentCoroutineContext().isActive) {
-                    throw MegaException(null, "Download interrotto.")
-                }
             }
 
-            destinazione.delete()
-            if (!parziale.renameTo(destinazione)) {
-                throw MegaException(null, "Non riesco a salvare la traccia sul telefono.")
-            }
-            onProgresso(1f)
-        } catch (e: Throwable) {
-            // Un file a metà è peggio di nessun file: al play successivo
-            // sembrerebbe scaricato e suonerebbe troncato.
-            parziale.delete()
-            throw e
+            // Interrotto a metà: il parziale resta dov'è, pronto per la ripresa.
+            if (!currentCoroutineContext().isActive) return@withContext
         }
+
+        destinazione.delete()
+        if (!parziale.renameTo(destinazione)) {
+            throw MegaException(null, "Non riesco a salvare la traccia sul telefono.")
+        }
+        onProgresso(1f)
+    }
+
+    /**
+     * Tronca il parziale al multiplo di 16 più vicino e restituisce la nuova
+     * lunghezza.
+     *
+     * AES-CTR lavora a blocchi di 16 byte: riprendere da un punto qualsiasi
+     * costringerebbe a scartare i primi byte del blocco, mentre riprendere da un
+     * confine non richiede niente. Buttare al massimo 15 byte è il prezzo
+     * migliore che si potesse pagare.
+     */
+    private fun allineaABlocco(parziale: File): Long {
+        if (!parziale.exists()) return 0L
+        val lunghezza = parziale.length()
+        val allineata = lunghezza - (lunghezza % MegaCrypto.BLOCCO)
+        if (allineata != lunghezza) {
+            RandomAccessFile(parziale, "rw").use { it.setLength(allineata) }
+        }
+        return allineata
     }
 }

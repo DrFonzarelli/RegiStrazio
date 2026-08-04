@@ -50,6 +50,7 @@ import androidx.compose.ui.unit.sp
 import com.example.registrazio.data.model.Commento
 import com.example.registrazio.data.model.Traccia
 import com.example.registrazio.data.model.VotoStella
+import com.example.registrazio.ui.StatoScaricamento
 import com.example.registrazio.ui.components.AppIconButton
 import com.example.registrazio.ui.components.AppTextField
 import com.example.registrazio.ui.components.Avatar
@@ -91,8 +92,8 @@ fun TrackCard(
     posizioneSecondi: Float,
     inRiproduzione: Boolean,
     audioAttivo: Boolean,
-    /** 0..1 mentre la traccia si scarica, `null` quando non sta scaricando. */
-    scaricamento: Float?,
+    /** Avanzamento e stato del download, `null` quando non c'è un download in corso. */
+    scaricamento: StatoScaricamento?,
     mioAppUid: String,
     azioni: TrackCardActions,
     onChiediEliminazione: (Commento) -> Unit,
@@ -155,10 +156,11 @@ fun TrackCard(
             .fillMaxWidth()
             .clip(Radius.cardLg)
             .background(colors.surface)
-            .appBorder(
-                if (inRiproduzione || scaricamento != null) colors.accent else colors.border,
-                Radius.lg
-            )
+            // Solo la riproduzione colora il bordo. Un download in corso non è
+            // "la traccia di cui ti stai occupando": puoi scaricarne una mentre
+            // ne ascolti un'altra, e due card accese confonderebbero. La
+            // percentuale accanto all'icona basta come segnale.
+            .appBorder(if (inRiproduzione) colors.accent else colors.border, Radius.lg)
             .padding(horizontal = 12.dp, vertical = 10.dp)
     ) {
         // ---------- testata ----------
@@ -225,7 +227,7 @@ fun TrackCard(
 
             TrackMenu(
                 traccia = traccia,
-                inDownload = scaricamento != null,
+                scaricamento = scaricamento,
                 onCambiaDownload = azioni.onCambiaDownload,
                 onRinomina = { bozzaTitolo = traccia.titolo; inRinomina = true },
                 onDettagli = azioni.onApriDettagli
@@ -255,28 +257,37 @@ fun TrackCard(
         ) {
             Text(secToLabel(posizioneSecondi), color = colors.textMuted, fontSize = 11.sp)
             when {
-                // Mentre scarica il numero dice quanto manca; a fine corsa
+                // Mentre scarica il numero dice a che punto siamo; a fine corsa
                 // resta la sola icona, come `.dl-indicator` nel prototipo.
-                // Toccarla interrompe: è il posto dove viene da cercarlo,
-                // molto prima che nel menu.
-                scaricamento != null -> Row(
-                    Modifier
-                        .clip(Radius.pillShape)
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                            onClick = azioni.onCambiaDownload
+                // Toccarla mette in pausa e la ripresa riparte da lì: è il posto
+                // dove viene da cercarlo, molto prima che nel menu.
+                //
+                // Niente padding verticale: farebbe questa riga più alta di
+                // quando il download non c'è, e la card salterebbe su e giù ogni
+                // volta che compare la percentuale.
+                scaricamento != null -> {
+                    val tinta = if (scaricamento.inPausa) colors.textMuted else colors.accent
+                    Row(
+                        Modifier
+                            .clip(Radius.pillShape)
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                                onClick = azioni.onCambiaDownload
+                            )
+                            .padding(horizontal = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text("${(scaricamento.frazione * 100).toInt()}%", color = tinta, fontSize = 11.sp)
+                        // Pausa mentre scarica, play quando è fermo: l'icona dice
+                        // cosa succede se la tocchi, non in che stato sei.
+                        AppIcon(
+                            if (scaricamento.inPausa) AppIcons.Play else AppIcons.Pause,
+                            10.dp,
+                            tinta
                         )
-                        .padding(horizontal = 6.dp, vertical = 2.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Text(
-                        "${(scaricamento * 100).toInt()}%",
-                        color = colors.accent,
-                        fontSize = 11.sp
-                    )
-                    AppIcon(AppIcons.X, 10.dp, colors.accent)
+                    }
                 }
                 traccia.scaricata -> AppIcon(AppIcons.CloudDone, 13.dp, colors.accent)
             }

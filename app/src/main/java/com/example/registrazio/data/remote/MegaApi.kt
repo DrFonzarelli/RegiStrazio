@@ -98,8 +98,18 @@ data class FileMega(
     val chiave: MegaCrypto.ChiaveFile
 )
 
-/** Errore restituito da MEGA, o problema nel parlarci. */
-class MegaException(val codice: Int?, message: String) : Exception(message)
+/**
+ * Errore restituito da MEGA, o problema nel parlarci.
+ *
+ * La [cause] non è decorativa: è l'unico modo per capire, più in su, se il
+ * problema era "MEGA dice di no" o "il telefono non ha linea" — due situazioni
+ * che meritano due frasi diverse.
+ */
+class MegaException(
+    val codice: Int?,
+    message: String,
+    cause: Throwable? = null
+) : Exception(message, cause)
 
 /**
  * Esito della lettura di una cartella, con il conteggio di ciò che è stato
@@ -344,7 +354,7 @@ class MegaApi(
         } catch (e: MegaException) {
             throw e
         } catch (e: Exception) {
-            throw MegaException(null, "Non riesco a contattare MEGA. Controlla la connessione.")
+            throw MegaException(null, "Non riesco a contattare MEGA. Controlla la connessione.", e)
         }
 
         val radice = runCatching { JsonParser.parseString(testo) }.getOrNull()
