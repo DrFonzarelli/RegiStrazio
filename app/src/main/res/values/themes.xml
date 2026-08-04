@@ -2,4 +2,20 @@
 <resources>
 
     <style name="Theme.RegiStrazio" parent="android:Theme.Material.Light.NoActionBar" />
+
+    <!--
+        Tema della schermatina di commento che si apre dalla notifica.
+
+        Sfondo trasparente e niente animazione di finestra: deve sembrare un
+        riquadro che compare sopra quello che stavi facendo, non un'app che si
+        apre. Chi la usa sta ascoltando e vuole tornare subito a quello che
+        faceva — e soprattutto l'audio non si ferma.
+    -->
+    <style name="Theme.RegiStrazio.Sovrapposta" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowContentOverlay">@null</item>
+        <item name="android:windowAnimationStyle">@null</item>
+        <item name="android:backgroundDimEnabled">true</item>
+    </style>
 </resources>

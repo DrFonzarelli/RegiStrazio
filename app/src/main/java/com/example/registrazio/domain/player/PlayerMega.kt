@@ -2,13 +2,12 @@ package com.example.registrazio.domain.player
 
 import android.content.Context
 import android.util.Log
-import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import com.example.registrazio.data.remote.MegaCrypto
 import com.example.registrazio.data.remote.MegaDataSourceFactory
@@ -22,16 +21,10 @@ import com.example.registrazio.data.remote.MegaDataSourceFactory
 @UnstableApi
 class PlayerMega(context: Context) {
 
-    private val player = ExoPlayer.Builder(context).build().apply {
-        setAudioAttributes(
-            AudioAttributes.Builder()
-                .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
-                .setUsage(C.USAGE_MEDIA)
-                .build(),
-            // true: se arriva una telefonata la riproduzione si ferma da sola
-            true
-        )
-    }
+    // Non lo crea: se lo fa dare da [PlayerCondiviso], così il servizio della
+    // notifica comanda esattamente lo stesso audio invece di un secondo player
+    // che non sa niente di questo.
+    private val player = PlayerCondiviso.player(context)
 
     /** Chiamato quando la durata reale del file diventa nota (in secondi). */
     var onDurata: ((Int) -> Unit)? = null
@@ -48,20 +41,39 @@ class PlayerMega(context: Context) {
      */
     var onErrore: ((Throwable) -> Unit)? = null
 
+    /**
+     * Play o pausa arrivati da **fuori** l'interfaccia: la notifica, i tasti
+     * delle cuffie, una telefonata che ruba l'audio.
+     *
+     * Senza questo, premere pausa sulla notifica fermerebbe l'audio ma nell'app
+     * il tasto resterebbe su "pausa": due schermi che raccontano cose diverse
+     * sullo stesso player.
+     */
+    var onPlayPausa: ((Boolean) -> Unit)? = null
+
     private var durataNotificata = 0
 
-    init {
-        player.addListener(object : Player.Listener {
-            override fun onPlaybackStateChanged(stato: Int) {
-                if (stato == Player.STATE_READY) notificaDurata()
-                if (stato == Player.STATE_ENDED) onFine?.invoke()
-            }
+    // Tenuto da parte per poterlo togliere: il player sopravvive a questo
+    // oggetto, quindi un ascoltatore lasciato attaccato resterebbe lì per sempre
+    // — e a ogni nuovo ViewModel se ne aggiungerebbe un altro.
+    private val ascoltatore = object : Player.Listener {
+        override fun onPlaybackStateChanged(stato: Int) {
+            if (stato == Player.STATE_READY) notificaDurata()
+            if (stato == Player.STATE_ENDED) onFine?.invoke()
+        }
 
-            override fun onPlayerError(errore: PlaybackException) {
-                Log.w(TAG, "riproduzione fallita: ${errore.errorCodeName}")
-                onErrore?.invoke(errore)
-            }
-        })
+        override fun onPlayerError(errore: PlaybackException) {
+            Log.w(TAG, "riproduzione fallita: ${errore.errorCodeName}")
+            onErrore?.invoke(errore)
+        }
+
+        override fun onIsPlayingChanged(staSuonando: Boolean) {
+            onPlayPausa?.invoke(staSuonando)
+        }
+    }
+
+    init {
+        player.addListener(ascoltatore)
     }
 
     private fun notificaDurata() {
@@ -82,11 +94,16 @@ class PlayerMega(context: Context) {
      * `ProgressiveMediaSource` invece di un semplice `setMediaItem`: serve a
      * imporre la nostra sorgente dati al posto di quella HTTP di default.
      */
-    fun riproduci(url: String, chiave: MegaCrypto.ChiaveFile, daSecondi: Float) {
+    fun riproduci(
+        url: String,
+        chiave: MegaCrypto.ChiaveFile,
+        daSecondi: Float,
+        titolo: String = ""
+    ) {
         durataNotificata = 0
         val sorgente = ProgressiveMediaSource
             .Factory(MegaDataSourceFactory(chiave))
-            .createMediaSource(MediaItem.fromUri(url))
+            .createMediaSource(itemConTitolo(url, titolo))
 
         player.setMediaSource(sorgente)
         player.prepare()
@@ -101,13 +118,31 @@ class PlayerMega(context: Context) {
      * perché lo scaricatore lo decifra mentre lo scrive. Va bene il MediaItem
      * normale, e non serve nemmeno la rete.
      */
-    fun riproduciFile(file: java.io.File, daSecondi: Float) {
+    fun riproduciFile(file: java.io.File, daSecondi: Float, titolo: String = "") {
         durataNotificata = 0
-        player.setMediaItem(MediaItem.fromUri(android.net.Uri.fromFile(file)))
+        player.setMediaItem(itemConTitolo(android.net.Uri.fromFile(file).toString(), titolo))
         player.prepare()
         if (daSecondi > 0f) player.seekTo((daSecondi * 1000).toLong())
         player.play()
     }
+
+    /**
+     * Il titolo viaggia col brano.
+     *
+     * La notifica e la lock screen leggono i metadati del `MediaItem`: senza,
+     * mostrerebbero l'indirizzo temporaneo di MEGA o il percorso di un file in
+     * cache, che non dicono niente a nessuno.
+     */
+    private fun itemConTitolo(uri: String, titolo: String): MediaItem =
+        MediaItem.Builder()
+            .setUri(uri)
+            .setMediaMetadata(
+                MediaMetadata.Builder()
+                    .setTitle(titolo.ifBlank { "RegiStrazio" })
+                    .setArtist("RegiStrazio")
+                    .build()
+            )
+            .build()
 
     fun riprendi() = player.play()
 
@@ -128,7 +163,19 @@ class PlayerMega(context: Context) {
     val staSuonando: Boolean
         get() = player.isPlaying
 
-    fun rilascia() = player.release()
+    /**
+     * Non rilascia niente.
+     *
+     * Il player non è suo: è di [PlayerCondiviso], e il servizio della notifica
+     * lo sta ancora usando. Chiuderlo qui spegnerebbe l'audio ogni volta che si
+     * gira il telefono, che ricrea il ViewModel.
+     */
+    fun scollega() {
+        player.removeListener(ascoltatore)
+        onDurata = null
+        onFine = null
+        onErrore = null
+    }
 
     private companion object {
         const val TAG = "PlayerMega"

@@ -21,7 +21,11 @@ import com.example.registrazio.data.model.Utente
 import androidx.media3.common.util.UnstableApi
 import com.example.registrazio.data.remote.MegaCrypto
 import com.example.registrazio.domain.identity.IdentityManager
+import com.example.registrazio.domain.player.CommentiDaFuori
+import com.example.registrazio.domain.player.PlayerCondiviso
 import com.example.registrazio.domain.player.PlayerMega
+import com.example.registrazio.domain.player.ServizioRiproduzione
+import com.example.registrazio.domain.player.TracciaInAscolto
 import com.example.registrazio.util.OrdineNaturale
 import com.example.registrazio.util.senzaRete
 import kotlinx.coroutines.CoroutineScope
@@ -250,6 +254,18 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 )
             }
         }
+        // Play/pausa possono arrivare dalla notifica, dai tasti delle cuffie o
+        // da una telefonata. Qui si **riallinea** e basta: nessun comando al
+        // player, o si rimbalzerebbe con chi l'ha appena dato.
+        player.onPlayPausa = { suona -> allineaAlPlayer(suona) }
+
+        // Un commento scritto dalla notifica è già su Room. Se l'app è viva va
+        // portato anche in memoria, o la card resterebbe indietro fino al
+        // prossimo avvio.
+        viewModelScope.launch {
+            CommentiDaFuori.nuovi.collect { tracciaId -> ricaricaCommenti(tracciaId) }
+        }
+
         player.onErrore = { errore ->
             fermaRiproduzione()
             // Il messaggio di ExoPlayer non è per gli occhi di nessuno: o è la
@@ -497,8 +513,20 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         // un'altra, o va fermato perché si passa a una traccia simulata.
         tracciaCaricata = null
 
-        if (traccia.daMega) avviaDaMega(traccia, da)
-        else avviaSimulata(tracciaId, traccia.durataSecondi.toFloat(), da)
+        // Il servizio deve sapere cosa sta suonando **prima** che parta l'audio:
+        // è da qui che la notifica prende il titolo, e il commento rapido la
+        // traccia a cui attaccarsi.
+        PlayerCondiviso.segnaInAscolto(
+            TracciaInAscolto(traccia.id, traccia.titolo, traccia.cartellaId)
+        )
+        if (traccia.daMega) {
+            ServizioRiproduzione.avvia(getApplication())
+            avviaDaMega(traccia, da)
+        } else {
+            // Le tracce dimostrative non hanno un file dietro: niente notifica,
+            // che prometterebbe comandi su un audio che non esiste.
+            avviaSimulata(tracciaId, traccia.durataSecondi.toFloat(), da)
+        }
     }
 
     /**
@@ -515,7 +543,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             // su disco il file è già in chiaro.
             fileLocali[traccia.id]?.let { file ->
                 if (file.exists()) {
-                    player.riproduciFile(file, da)
+                    player.riproduciFile(file, da, traccia.titolo)
                     tracciaCaricata = traccia.id
                     seguiPosizione(traccia.id)
                     return@launch
@@ -548,7 +576,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 return@launch
             }
 
-            player.riproduci(url, chiave, da)
+            player.riproduci(url, chiave, da, traccia.titolo)
             tracciaCaricata = traccia.id
             seguiPosizione(traccia.id)
         }
@@ -596,6 +624,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         playJob = null
         player.ferma()
         tracciaCaricata = null
+        // Niente più audio: via anche la notifica, che prometterebbe comandi su
+        // qualcosa che non c'è.
+        PlayerCondiviso.segnaInAscolto(null)
+        ServizioRiproduzione.ferma(getApplication())
         _state.update {
             it.copy(riproduzione = it.riproduzione.copy(inRiproduzione = false, audioAttivo = false))
         }
@@ -637,6 +669,50 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     )
                 }
             )
+        }
+    }
+
+    /**
+     * Il player è partito o si è fermato senza che l'abbiamo chiesto noi.
+     *
+     * Non comanda niente: si limita a far dire all'interfaccia la verità. Se lo
+     * stato è già allineato non fa nulla — quello è il caso normale, cioè un
+     * comando partito da qui.
+     */
+    private fun allineaAlPlayer(suona: Boolean) {
+        val r = _state.value.riproduzione
+        if (r.inRiproduzione == suona) return
+        val id = r.tracciaId ?: return
+
+        if (suona) {
+            _state.update { it.copy(riproduzione = it.riproduzione.copy(inRiproduzione = true)) }
+            playJob?.cancel()
+            playJob = viewModelScope.launch { seguiPosizione(id) }
+        } else {
+            playJob?.cancel()
+            playJob = null
+            _state.update {
+                it.copy(
+                    riproduzione = it.riproduzione.copy(inRiproduzione = false, audioAttivo = false)
+                )
+            }
+            salvaTracciaSuDisco(id)
+        }
+    }
+
+    /**
+     * Rilegge da Room i commenti di una traccia.
+     *
+     * Serve per quelli scritti dalla notifica: li ha scritti un'altra parte del
+     * processo, e questa copia in memoria non ne sa niente.
+     */
+    private fun ricaricaCommenti(tracciaId: String) {
+        viewModelScope.launch {
+            val freschi = archivio.tracce().find { it.id == tracciaId }?.commenti ?: return@launch
+            aggiornaTraccia(tracciaId, persisti = false) { it.copy(commenti = freschi) }
+            // Il commento nasce già LOCALE: il badge del tasto Sincronizza deve
+            // contarlo, o resterebbe indietro di uno.
+            _state.update { it.copy(pendenti = archivio.pendenti()) }
         }
     }
 
@@ -1290,7 +1366,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         playJob?.cancel()
         bulkJob?.cancel()
         // Senza questa il player continuerebbe a tenersi socket e decoder.
-        player.rilascia()
+        player.scollega()
         // `scrittura` non si annulla apposta: una scrittura partita un istante
         // prima della chiusura deve arrivare in fondo, è tutto il suo scopo.
         super.onCleared()

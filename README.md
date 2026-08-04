@@ -491,6 +491,60 @@ Nota: il ramo locale legge un file già in chiaro e non usa il DataSource
 speciale. Solo il ramo streaming decifra, perché solo lì i byte arrivano
 cifrati da MEGA (vedi *I byte che arrivano da quell'URL sono cifrati*).
 
+### Riproduzione fuori dall'app, e il commento dalla notifica
+
+L'audio deve continuare a schermo spento e con l'app chiusa, come in qualunque
+lettore musicale — e mentre continua si deve poter **commentare senza rientrare
+nell'app**. È il gesto che rende utile ascoltare in cuffia facendo altro, ed è
+quello che il prototipo simula con la finta lock screen.
+
+**Com'è messo insieme.**
+
+| Pezzo | Cosa fa |
+|---|---|
+| `PlayerCondiviso` | l'unico ExoPlayer, più "cosa sta suonando" (id, titolo, cartella) |
+| `ServizioRiproduzione` | `MediaSessionService` di Media3: tiene viva la riproduzione e pubblica la sessione |
+| `ProviderNotifica` | costruisce la notifica: titolo, play/pausa, **Commenta** |
+| `CommentoRapido` | la schermatina di commento aperta dalla notifica |
+| `ComandiNotifica` | play/pausa e chiusura dai tasti della notifica |
+| `CommentiDaFuori` | avvisa il ViewModel di un commento nato fuori dall'interfaccia |
+
+**Perché il player è un singleton, che di solito è una cattiva idea.** Un player
+dentro il ViewModel muore con la schermata. L'alternativa ortodossa — il player
+dentro il servizio, l'interfaccia che ci parla via `MediaController` — vorrebbe
+dire riscrivere ogni chiamata in forma asincrona. Con un'istanza sola,
+`PlayerMega` comanda come ha sempre fatto e il servizio ci mette sopra la
+sessione media. Conseguenza da ricordare: **`PlayerMega` non rilascia il player**
+(`scollega()` toglie solo i suoi ascoltatori), perché il servizio lo sta ancora
+usando; chiuderlo alla distruzione del ViewModel spegnerebbe l'audio a ogni
+rotazione dello schermo.
+
+**Perché una schermatina di commento e non la risposta rapida di Android.**
+`RemoteInput` è il modo naturale di rispondere da una notifica, e a prima vista
+è quello giusto. Ma avvisa **solo quando l'utente invia**: non esiste modo di
+sapere quando ha aperto il campo. Nel prototipo il minutaggio si congela nel
+momento in cui premi il tasto commento (`lnCommentSeconds = activePlaybackSeconds`),
+non quando invii — e un commento appiccicato al secondo dell'invio finirebbe
+sistematicamente **dopo** il punto di cui parla, tanto più quanto più lungo è
+quello che scrivi. Con una schermata nostra quel momento si conosce: è
+`onCreate`. E ci entra anche il lucchetto della card, che sbloccato fa scorrere
+il minutaggio insieme al cursore.
+
+**L'audio non si ferma mai** per commentare. La schermatina legge la posizione,
+non tocca il player. Mettere in pausa per essere precisi al secondo sarebbe una
+cura peggiore del male.
+
+**Il commento scritto da lì nasce già su Room** (`StatoSync.LOCALE`) e viene
+annunciato su `CommentiDaFuori`: se l'app è viva il ViewModel lo raccoglie e la
+card si aggiorna; se non lo è, al prossimo avvio arriva dal database. Vale la
+seconda regola in cima al documento — il telefono è la fonte di verità, sempre.
+
+**Play/pausa dalla notifica non passano dal ViewModel.** Agiscono sul player, e
+il ViewModel si riallinea da `onIsPlayingChanged` (`allineaAlPlayer`). Quel
+metodo non comanda mai il player: se comandasse, un tocco sulla notifica e uno
+nell'app si rimbalzerebbero a vicenda. Lo stesso canale copre i tasti delle
+cuffie e la telefonata che ruba l'audio.
+
 ### Gestione scadenza URL durante lo streaming
 
 Se ExoPlayer riceve errore HTTP 403/401 durante lo streaming (URL scaduto):
@@ -951,6 +1005,8 @@ perché la BOM non le mostra): Firestore `26.5.0`, Auth `24.2.0`.
 | MEGA HTTP API + crypto | ✅ | elenco, decifratura e scarico dei byte **verificati sul campo** |
 | Tasto Sincronizza | ❌ | |
 | Banner offline | ❌ | c'è il messaggio al gesto che fallisce, non il banner permanente |
+| Riproduzione in background + notifica | 🟡 | `MediaSessionService` vero: **compila, tutto da provare sul telefono** |
+| Commento dalla notifica | 🟡 | schermatina col lucchetto, minutaggio congelato all'apertura: **da provare** |
 | Download reale su disco | ✅ | **provato**: scarica, decifra, suona da locale, si rimuove |
 | Pausa e ripresa del download | ✅ | **provata**: riprende da dove era, dai tre comandi |
 | Riproduzione dal file locale | ✅ | **provata**, anche togliendo il file mentre suona |
@@ -967,9 +1023,16 @@ con Firestore. Non era così — mancava la persistenza locale, che deve esister
 **prima** e **indipendentemente** da Firestore. Vedi la seconda regola in cima al
 documento.
 
-**Stato della build:** verde, e l'app gira su un telefono vero. L'ultima cosa
-non ancora provata sul telefono è la pausa/ripresa dei download, arrivata dopo
-l'ultima sessione di prova.
+**Stato della build:** verde fino al giro precedente, e l'app gira su un
+telefono vero.
+
+**La riproduzione in background con notifica non è ancora stata compilata né
+provata**, ed è l'unico pezzo del progetto scritto contro API che non ho potuto
+verificare staticamente (`MediaSessionService`, `MediaNotification.Provider`,
+`MediaStyleNotificationHelper` di Media3 1.2.0). Tutto il resto è stato
+incrociato con il codice esistente prima di essere spinto; questo no. Aspettarsi
+un giro di correzioni di compilazione è ragionevole — non è un fallimento, è dove
+siamo.
 
 ---
 

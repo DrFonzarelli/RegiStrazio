@@ -7,6 +7,13 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
 
     <!--
+        Da Android 13 le notifiche vanno chieste all'utente. Senza il permesso
+        l'audio suona lo stesso, ma la notifica non compare — e con lei sparisce
+        il tasto per commentare senza rientrare nell'app.
+    -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!--
         Da Android 11 un'app non vede le altre a meno che non le dichiari qui.
         Senza questo blocco, chiedere di aprire MEGA risponderebbe "non
         installata" anche avendola sul telefono, e finiremmo sempre nel browser.
@@ -49,6 +56,43 @@
                 <data android:mimeType="text/plain" />
             </intent-filter>
         </activity>
+
+        <!--
+            Tiene viva la riproduzione fuori dall'app e mostra la notifica con
+            play/pausa e "Commenta". L'intent-filter è quello che fa riconoscere
+            il servizio come sessione media al sistema: senza, niente comandi
+            sulla lock screen e niente tasti delle cuffie.
+        -->
+        <service
+            android:name=".domain.player.ServizioRiproduzione"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback">
+            <intent-filter>
+                <action android:name="androidx.media3.session.MediaSessionService" />
+            </intent-filter>
+        </service>
+
+        <!--
+            Il riquadro del commento aperto dalla notifica.
+
+            `excludeFromRecents` perche' non e' una schermata dell'app: e' un
+            gesto, e ritrovarsela fra le app aperte sarebbe solo confusione.
+            `singleTask` con `taskAffinity` vuoto la tiene fuori dal task
+            principale, cosi' chiuderla riporta dove si era, non nell'app.
+        -->
+        <activity
+            android:name=".domain.player.CommentoRapido"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTask"
+            android:taskAffinity=""
+            android:theme="@style/Theme.RegiStrazio.Sovrapposta"
+            android:windowSoftInputMode="adjustResize|stateVisible" />
+
+        <!-- Play/pausa e chiusura dalla notifica. -->
+        <receiver
+            android:name=".domain.player.ComandiNotifica"
+            android:exported="false" />
     </application>
 
 </manifest>
