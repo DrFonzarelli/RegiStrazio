@@ -5,13 +5,16 @@ import androidx.annotation.OptIn
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.registrazio.data.DemoData
+import com.example.registrazio.data.local.ArchivioLocale
 import com.example.registrazio.data.local.ProfiliStore
+import com.example.registrazio.data.local.db.ConteggioPendenti
 import com.example.registrazio.data.remote.EsitoElenco
 import com.example.registrazio.data.remote.LinkMega
 import com.example.registrazio.data.remote.MegaApi
 import com.example.registrazio.data.remote.MegaException
 import com.example.registrazio.data.model.Cartella
 import com.example.registrazio.data.model.Commento
+import com.example.registrazio.data.model.StatoSync
 import com.example.registrazio.data.model.Traccia
 import com.example.registrazio.data.model.Utente
 import androidx.media3.common.util.UnstableApi
@@ -19,7 +22,10 @@ import com.example.registrazio.data.remote.MegaCrypto
 import com.example.registrazio.domain.identity.IdentityManager
 import com.example.registrazio.domain.player.PlayerMega
 import com.example.registrazio.util.OrdineNaturale
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -77,7 +83,9 @@ data class AppState(
     val riproduzione: StatoRiproduzione = StatoRiproduzione(),
     val bulkDownload: StatoBulkDownload? = null,
     val messaggio: Messaggio? = null,
-    val collegamento: StatoCollegamento = StatoCollegamento()
+    val collegamento: StatoCollegamento = StatoCollegamento(),
+    /** Quante righe aspettano di finire su Firestore: è il badge del tasto Sincronizza. */
+    val pendenti: ConteggioPendenti = ConteggioPendenti(0, 0, 0)
 )
 
 /**
@@ -104,15 +112,25 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     private val identityManager = IdentityManager(app)
     private val profiliStore = ProfiliStore(app)
+    private val archivio = ArchivioLocale(app)
     private val megaApi = MegaApi()
+
+    /**
+     * Scope a parte per le scritture su disco.
+     *
+     * Non `viewModelScope`: quello muore con la schermata, e un commento scritto
+     * un istante prima di chiudere l'app resterebbe a metà. Salvare deve
+     * arrivare in fondo comunque.
+     */
+    private val scrittura = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val player = PlayerMega(app)
 
     /**
      * Chiavi di decrittazione dei file, per id traccia.
      *
-     * Stanno solo in memoria e di proposito: sono il segreto che apre l'audio e
-     * si ricavano dal link della cartella, che è già salvato. Dopo un riavvio
-     * spariscono, come le tracce a cui appartengono.
+     * Copia in memoria di quelle in archivio, caricata all'avvio: serve solo a
+     * non interrogare il disco a ogni play. Non escono mai da qui — su Firestore
+     * va `idFileMega`, mai la chiave.
      */
     private val chiaviFile = mutableMapOf<String, MegaCrypto.ChiaveFile>()
 
@@ -161,10 +179,35 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             it.copy(
                 identita = identita,
                 schermata = if (identita != null) Schermata.Home else Schermata.Gate,
-                cartelle = DemoData.cartelle + profiliStore.cartelle(),
+                cartelle = DemoData.cartelle,
                 tracce = DemoData.tracce,
                 profiliDisponibili = profiliStore.profili()
             )
+        }
+
+        // Il vero contenuto arriva dall'archivio locale, non da Firestore: è lui
+        // la fonte di verità finché non si preme Sincronizza.
+        viewModelScope.launch {
+            val cartelle = archivio.cartelle()
+            val tracce = archivio.tracce()
+            chiaviFile.putAll(archivio.chiaviFile())
+            val conteggio = archivio.pendenti()
+            _state.update {
+                it.copy(
+                    cartelle = DemoData.cartelle + cartelle,
+                    tracce = DemoData.tracce + tracce,
+                    pendenti = conteggio
+                )
+            }
+        }
+    }
+
+    /** Esegue una scrittura su disco e riallinea il conteggio dei pendenti. */
+    private fun salva(blocco: suspend () -> Unit) {
+        scrittura.launch {
+            blocco()
+            val conteggio = archivio.pendenti()
+            _state.update { it.copy(pendenti = conteggio) }
         }
     }
 
@@ -220,7 +263,17 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         )
     }
 
-    fun aggiorna() = mostra("Aggiornato — nessuna novità")
+    /**
+     * Per ora il tasto in topbar riporta solo cosa aspetta di essere caricato.
+     * Diventerà il tasto Sincronizza quando ci sarà Firestore dall'altra parte.
+     */
+    fun aggiorna() {
+        val p = _state.value.pendenti
+        mostra(
+            if (!p.ceNeSono) "Tutto sincronizzato"
+            else "Da caricare: ${p.totale} " + if (p.totale == 1) "modifica" else "modifiche"
+        )
+    }
 
     // ---------- riproduzione ----------
 
@@ -421,6 +474,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         _state.update {
             it.copy(riproduzione = it.riproduzione.copy(inRiproduzione = false, audioAttivo = false))
         }
+        // Ascolti e punti riascoltati si sono accumulati in memoria durante la
+        // riproduzione: questo è il momento di metterli via.
+        _state.value.riproduzione.tracciaId?.let { salvaTracciaSuDisco(it) }
     }
 
     /**
@@ -442,7 +498,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         val indice = ((posizione / durata) * BUCKETS).toInt().coerceIn(0, BUCKETS - 1)
-        aggiornaTraccia(tracciaId) { t ->
+        aggiornaTraccia(tracciaId, persisti = false) { t ->
             t.copy(
                 ascolti = t.ascolti + ascoltoInPiu,
                 playBuckets = t.playBuckets.mapIndexed { i, v -> if (i == indice) v + passo else v }
@@ -470,6 +526,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         aggiornaTraccia(tracciaId) { t ->
             t.copy(commenti = (t.commenti + nuovo).sortedBy { it.timestampSecondi })
         }
+        salva { archivio.salvaCommento(nuovo) }
         mostra("Commento salvato")
     }
 
@@ -484,11 +541,17 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     .sortedBy { it.timestampSecondi }
             )
         }
+        // Torna LOCALE anche se era già su Firestore: il testo è cambiato qui e
+        // va ricaricato.
+        traccia(tracciaId)?.commenti?.find { it.id == commentoId }?.let { modificato ->
+            salva { archivio.salvaCommento(modificato.copy(statoSync = StatoSync.LOCALE)) }
+        }
         mostra("Commento aggiornato")
     }
 
     fun eliminaCommento(tracciaId: String, commentoId: String) {
         aggiornaTraccia(tracciaId) { t -> t.copy(commenti = t.commenti.filterNot { it.id == commentoId }) }
+        salva { archivio.eliminaCommento(commentoId) }
         mostra("Commento eliminato")
     }
 
@@ -587,12 +650,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     aggiuntoDa = _state.value.identita?.appUid.orEmpty(),
                     numTracce = file.size
                 )
-                profiliStore.registraCartella(cartella)
-
-                // MEGA restituisce i nodi senza un ordine utile: senza questo le
-                // tracce comparirebbero sparse.
-                // Le chiavi arrivano solo con l'elenco: vanno tenute ora, o al
-                // play non si potrebbe decifrare niente.
+                // Le chiavi arrivano solo con l'elenco dei file: vanno tenute
+                // ora, o al play non si potrebbe decifrare niente.
                 file.forEach { chiaviFile[it.handle] = it.chiave }
 
                 val nuoveTracce = file.sortedWith(compareBy(OrdineNaturale) { it.nome }).map { f ->
@@ -624,6 +683,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                             chiediNome = !giaCollegata && risultato.nomeCartella.isNullOrBlank()
                         )
                     )
+                }
+                salva {
+                    archivio.salvaCartella(cartella)
+                    archivio.sostituisciTracce(cartella.id, nuoveTracce, chiaviFile)
                 }
                 mostra(
                     if (giaCollegata) "Cartella aggiornata — ${file.size} tracce"
@@ -674,7 +737,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun rimuoviCartella(cartellaId: String) {
         val nome = _state.value.cartelle.find { it.id == cartellaId }?.nome ?: return
-        profiliStore.rimuoviCartella(cartellaId)
+        salva { archivio.rimuoviCartella(cartellaId) }
         _state.update {
             it.copy(
                 cartelle = it.cartelle.filterNot { c -> c.id == cartellaId },
@@ -691,13 +754,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             it.copy(cartelle = it.cartelle.map { c -> if (c.id == cartellaId) c.copy(nome = pulito) else c })
         }
         // Va salvata, non solo mostrata: altrimenti il nome scelto sparisce alla
-        // prima chiusura dell'app. Le cartelle demo non stanno nello store e
-        // vanno lasciate fuori, o al riavvio comparirebbero doppie.
-        _state.value.cartelle.find { it.id == cartellaId }?.let { cartella ->
-            if (profiliStore.cartelle().any { it.id == cartellaId }) {
-                profiliStore.registraCartella(cartella)
-            }
-        }
+        // prima chiusura. Le cartelle demo non hanno un link e restano fuori
+        // dall'archivio, o al riavvio comparirebbero doppie.
+        _state.value.cartelle
+            .find { it.id == cartellaId && it.linkMega.isNotBlank() }
+            ?.let { cartella -> salva { archivio.salvaCartella(cartella) } }
     }
 
     fun rinominaTraccia(tracciaId: String, titolo: String) {
@@ -711,6 +772,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun simulaReinstallazione() {
         identityManager.dimentica()
         mettiInPausa()
+        // Reinstallare cancella i dati dell'app: anche l'archivio locale.
+        chiaviFile.clear()
+        salva { archivio.svuota() }
         _state.update {
             it.copy(
                 identita = null,
@@ -726,6 +790,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         profiliStore.svuota()
         identityManager.dimentica()
         mettiInPausa()
+        chiaviFile.clear()
+        salva { archivio.svuota() }
         _state.update {
             AppState(
                 temaScuro = it.temaScuro,
@@ -751,10 +817,29 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(messaggio = Messaggio(testo, ++seqMessaggi)) }
     }
 
-    private fun aggiornaTraccia(id: String, blocco: (Traccia) -> Traccia) {
+    /**
+     * [persisti] a `false` solo dal ciclo di riproduzione: là passa quattro
+     * volte al secondo, e scrivere su disco a quel ritmo non ha senso. Quei
+     * contatori vengono salvati quando la riproduzione si ferma.
+     */
+    private fun aggiornaTraccia(
+        id: String,
+        persisti: Boolean = true,
+        blocco: (Traccia) -> Traccia
+    ) {
         _state.update { s ->
             s.copy(tracce = s.tracce.map { if (it.id == id) blocco(it) else it })
         }
+        if (persisti) salvaTracciaSuDisco(id)
+    }
+
+    /**
+     * Le tracce demo non stanno in archivio: salvarle le farebbe comparire
+     * doppie al riavvio, una volta dalla demo e una dal disco.
+     */
+    private fun salvaTracciaSuDisco(id: String) {
+        val aggiornata = traccia(id)?.takeIf { it.daMega } ?: return
+        salva { archivio.salvaTraccia(aggiornata, chiaviFile[id]) }
     }
 
     override fun onCleared() {
@@ -762,6 +847,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         bulkJob?.cancel()
         // Senza questa il player continuerebbe a tenersi socket e decoder.
         player.rilascia()
+        // `scrittura` non si annulla apposta: una scrittura partita un istante
+        // prima della chiusura deve arrivare in fondo, è tutto il suo scopo.
         super.onCleared()
     }
 

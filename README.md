@@ -54,6 +54,18 @@ Prima dello schema, il principio che regge tutto il resto:
 > telefono, oppure in entrambi i posti. Firestore tiene tutto ciò che audio non
 > è: chi siamo, quali cartelle sono collegate, i commenti, i voti, i contatori.
 
+E una seconda regola, altrettanto vincolante:
+
+> **Il telefono è la fonte di verità, Firestore è la destinazione.** Tutto ciò
+> che l'utente fa viene scritto in Room **all'istante**, con lo stato "da
+> caricare". Firestore lo vede solo quando qualcuno preme Sincronizza, ed è
+> anche l'unico momento in cui si leggono le modifiche degli altri.
+>
+> Conseguenza da cui non si scappa: **chiudere l'app non può far perdere
+> niente**. Nemmeno un commento scritto un secondo prima, nemmeno l'elenco
+> tracce di una cartella appena collegata. Se un dato sparisce alla chiusura,
+> è un bug, non uno stadio intermedio.
+
 | Cosa | Dove vive | Perché |
 |---|---|---|
 | File audio | MEGA, e sul telefono se scaricato | MEGA è già il posto dove il gruppo tiene le prove |
@@ -64,6 +76,8 @@ Prima dello schema, il principio che regge tutto il resto:
 | Profili (nome, colore) | Firestore | servono per attribuire i commenti |
 | Identità propria (`appUid`) | Solo sul telefono | in `EncryptedSharedPreferences`, mai in rete |
 | Elenco dei file scaricati in locale | Solo sul telefono | in Room; è una scelta di questo telefono, non del gruppo |
+| Chiavi AES dei file MEGA | Solo sul telefono | in Room, per poter premere play senza rileggere MEGA. Su Firestore va `idFileMega`, mai la chiave |
+| **Copia locale di tutto quanto sopra** | Room, sempre | è da lì che l'app legge; Firestore si tocca solo sincronizzando |
 
 Firestore è un database di documenti, non un archivio di file: metterci dentro
 l'audio sarebbe costoso e fuori dal suo scopo. MEGA fa già quel lavoro.
@@ -177,8 +191,18 @@ data class TracciaDownload(
     val dimensioneBytes: Long
 )
 
-enum class StatoSync { PENDING, UPLOADING, ERROR }
+enum class StatoSync { LOCALE, SINCRONIZZATO, DA_ELIMINARE, ERRORE }
 ```
+
+**Perché questi quattro stati.** `LOCALE` copre sia "creato qui" sia "modificato
+qui": l'upload riscrive il documento intero, quindi non serve distinguerli, e
+modificare una riga già sincronizzata la riporta semplicemente a `LOCALE`.
+
+`DA_ELIMINARE` esiste perché una riga cancellata **non può sparire subito** se
+era già su Firestore: resta in tabella, nascosta all'interfaccia, finché la
+sincronizzazione non l'ha tolta anche dall'altra parte. Cancellarla e basta
+significherebbe vedersela ricomparire al giro dopo. Una riga mai caricata,
+invece, si cancella davvero — non c'è niente da dire a nessuno.
 
 I commenti pending vivono in Room dal momento in cui vengono scritti fino al
 momento in cui il Sincronizza li carica su Firestore con successo. Dopo l'upload,
