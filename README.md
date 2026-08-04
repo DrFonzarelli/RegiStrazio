@@ -770,43 +770,25 @@ perché la BOM non le mostra): Firestore `26.5.0`, Auth `24.2.0`.
 | Durata delle tracce da MEGA | 🟡 | arriva al primo play di *quella* traccia; le altre restano `--:--` |
 | Nome della cartella letto da MEGA | ✅ | risolto provando tutti i nodi non-file, vedi errore 7 |
 | Waveform | 🟡 | equalizzatore animato decorativo, nessun dato reale |
-| Persistenza profili e cartelle | 🟡 | `ProfiliStore` = SharedPreferences + Gson, sta al posto di Firestore |
+| Archivio locale (Room) | 🟡 | cartelle, tracce e commenti con stato di sincronizzazione: **compila, da provare sul telefono** |
+| Elenco profili per il recupero account | 🟡 | `ProfiliStore` = SharedPreferences + Gson, unico resto del cloud simulato |
 | Firestore | ❌ | dipendenza presente, **mai importata** nel codice |
 | Firebase Anonymous Auth | ❌ | mai inizializzata |
-| Room (entity, DAO, database) | ❌ | dipendenza + KSP configurati, **zero classi scritte** |
 | MEGA HTTP API + crypto | 🟡 | elenco e decifratura **verificati sul campo**; manca lo scarico dei byte |
 | Tasto Sincronizza | ❌ | |
 | Banner offline | ❌ | |
 | Download reale su disco | ❌ | il tasto cambia solo un'icona: non scarica niente |
 
-**Attenzione:** tutto ciò che è 🟡 o ❌ vive **solo in memoria**. Chiudendo l'app
-si perde tutto tranne l'identità e ciò che sta in `ProfiliStore`.
+Detto in modo diretto, perché sono le domande che vengono naturali:
+**il link MEGA collega davvero** e l'audio si sente; **i commenti non arrivano
+ancora su Firestore**, ma da ora restano sul telefono in attesa invece di
+sparire; **il download non scarica niente**, cambia solo un'icona.
 
-Detto in modo diretto, perché è la domanda che viene naturale fare:
-**il link MEGA ora collega davvero** (l'app interroga MEGA e mostra i nomi veri
-dei file, decifrati con la chiave del link), ma **i commenti non vanno ancora su
-Firestore** (restano in RAM, anche se il toast dice "Commento salvato") e
-**il tasto play non produce audio** (avanza un contatore ogni 250 ms).
-
-#### Bug aperto: le tracce delle cartelle collegate non vengono ricaricate
-
-Nell'`init` di `AppViewModel` le cartelle vengono ripristinate da `ProfiliStore`,
-le tracce no:
-
-```kotlin
-cartelle = DemoData.cartelle + profiliStore.cartelle(),
-tracce   = DemoData.tracce   // <- le tracce finte generate al collegamento sono perse
-```
-
-*Effetto visibile:* colleghi una cartella, compaiono le tracce lette da MEGA,
-chiudi e riapri l'app — la cartella è ancora in elenco ma segna "0 tracce" ed è
-vuota dentro.
-
-*Nota:* si risolve quando le tracce arriveranno da Firestore, che è il posto
-dove devono stare. Rileggerle da MEGA a ogni avvio sarebbe lento e inutile: MEGA
-serve per i byte dell'audio, non come elenco da riscaricare ogni volta. Finché
-Firestore non c'è, **questa incoerenza è attesa** — non è un errore nuovo da
-investigare.
+**Il bug delle tracce che sparivano alla chiusura è chiuso**, e con esso una mia
+lettura sbagliata: l'avevo trattato come qualcosa che si sarebbe risolto da sé
+con Firestore. Non era così — mancava la persistenza locale, che deve esistere
+**prima** e **indipendentemente** da Firestore. Vedi la seconda regola in cima al
+documento.
 
 **Stato della build:** l'ultima build ha superato `kspDebugKotlin`,
 `processDebugGoogleServices` e tutto il packaging delle risorse, e si è fermata
@@ -960,7 +942,8 @@ Il dettaglio che porta alla diagnosi non sta nel messaggio ma nelle righe di
 download subito sopra: `symbol-processing-aa-embeddable-2.2.10-2.0.2`. È
 KSP **2.2.10**, non il 2.0.21 scritto nel catalogo — AGP 9 impone il proprio.
 
-*Fix:* Room a 2.7.1, spostata nel version catalog.
+*Fix:* Room a 2.7.1, spostata nel version catalog. Verificato: `kspDebugKotlin`
+e `compileDebugKotlin` passano.
 
 *Da ricordare:* un errore del processore di annotazioni senza file né riga è
 quasi sempre un'incompatibilità di versione, non un errore nel codice. E la
