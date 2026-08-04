@@ -122,7 +122,16 @@ data class StatoCollegamento(
      * perfino da spiegare. La conferma resta un gesto dell'utente.
      */
     val linkPrecompilato: String? = null,
-    val seqPrecompilato: Int = 0
+    val seqPrecompilato: Int = 0,
+
+    /**
+     * Quale cartella già collegata si sta ricaricando, per mostrarlo sulla sua
+     * card invece che con un messaggio generico.
+     *
+     * `null` quando si collega una cartella nuova: quella una card non ce l'ha
+     * ancora, e l'attesa la mostra la ghost card.
+     */
+    val cartellaInAggiornamento: String? = null
 )
 
 @OptIn(UnstableApi::class)
@@ -699,7 +708,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         // dopo aver chiuso l'app senza dover prima scollegare la cartella.
         val giaCollegata = _state.value.cartelle.any { it.megaFolderId == linkMega.folderId }
 
-        aggiornaCollegamento { it.copy(inCorso = true, errore = null) }
+        aggiornaCollegamento {
+            it.copy(
+                inCorso = true,
+                errore = null,
+                cartellaInAggiornamento = if (giaCollegata) linkMega.folderId else null
+            )
+        }
 
         viewModelScope.launch {
             val esito = runCatching { megaApi.elencaFileAudio(linkMega) }
@@ -708,7 +723,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 val file = risultato.audio
                 if (file.isEmpty()) {
                     aggiornaCollegamento {
-                        it.copy(inCorso = false, errore = spiegaElencoVuoto(risultato))
+                        it.copy(
+                            inCorso = false,
+                            errore = spiegaElencoVuoto(risultato),
+                            cartellaInAggiornamento = null
+                        )
                     }
                     return@launch
                 }
@@ -734,17 +753,42 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 // ora, o al play non si potrebbe decifrare niente.
                 file.forEach { chiaviFile[it.handle] = it.chiave }
 
+                // Le tracce già presenti, per handle: l'id di una traccia è il
+                // node handle di MEGA e non cambia mai, quindi si riconoscono.
+                val esistenti = _state.value.tracce
+                    .filter { it.cartellaId == cartella.id }
+                    .associateBy { it.id }
+
                 val nuoveTracce = file.sortedWith(compareBy(OrdineNaturale) { it.nome }).map { f ->
-                    Traccia(
-                        id = f.handle,
-                        cartellaId = cartella.id,
-                        // Il nome su MEGA include l'estensione: nell'elenco è rumore.
-                        titolo = f.nome.substringBeforeLast('.', f.nome),
-                        idFileMega = f.handle,
-                        // 0 = ancora ignota. La durata sta dentro il file audio, che
-                        // a questo punto non abbiamo ancora aperto.
-                        durataSecondi = 0
-                    )
+                    // Il nome su MEGA include l'estensione: nell'elenco è rumore.
+                    val titoloDaMega = f.nome.substringBeforeLast('.', f.nome)
+                    val precedente = esistenti[f.handle]
+
+                    if (precedente == null) {
+                        Traccia(
+                            id = f.handle,
+                            cartellaId = cartella.id,
+                            titolo = titoloDaMega,
+                            idFileMega = f.handle,
+                            // 0 = ancora ignota. La durata sta dentro il file audio,
+                            // che a questo punto non abbiamo ancora aperto.
+                            durataSecondi = 0
+                        )
+                    } else {
+                        // Ricaricare la cartella rilegge MEGA, e MEGA sa solo come
+                        // si chiama il file e quanto pesa. Stelline, rinomine,
+                        // durata, ascolti e commenti sono roba nostra: ripartire da
+                        // zero vorrebbe dire cancellare il lavoro di chi usa l'app.
+                        precedente.copy(
+                            // Un titolo scelto a mano vince su quello del file. Se
+                            // invece non era mai stato toccato, si aggiorna: il file
+                            // potrebbe essere stato rinominato su MEGA.
+                            titolo = if (precedente.titolo == titoloDaMega) titoloDaMega
+                            else precedente.titolo,
+                            cartellaId = cartella.id,
+                            idFileMega = f.handle
+                        )
+                    }
                 }
 
                 _state.update { stato ->
@@ -760,7 +804,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                             inCorso = false,
                             errore = null,
                             completati = stato.collegamento.completati + 1,
-                            chiediNome = !giaCollegata && risultato.nomeCartella.isNullOrBlank()
+                            chiediNome = !giaCollegata && risultato.nomeCartella.isNullOrBlank(),
+                            cartellaInAggiornamento = null
                         )
                     )
                 }
@@ -769,8 +814,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     archivio.sostituisciTracce(cartella.id, nuoveTracce, chiaviFile)
                 }
                 mostra(
-                    if (giaCollegata) "Cartella aggiornata — ${file.size} tracce"
-                    else "Collegate ${file.size} tracce"
+                    if (giaCollegata) "\"${cartella.nome}\" aggiornata — ${file.size} tracce"
+                    else "\"${cartella.nome}\" collegata — ${file.size} tracce"
                 )
             }
 
@@ -779,7 +824,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     it.copy(
                         inCorso = false,
                         errore = (errore as? MegaException)?.message
-                            ?: "Non riesco a leggere la cartella. Controlla la connessione."
+                            ?: "Non riesco a leggere la cartella. Controlla la connessione.",
+                        cartellaInAggiornamento = null
                     )
                 }
             }

@@ -1009,7 +1009,31 @@ browser fa sì che il caso peggiore resti utilizzabile invece che rotto, ma
 nasconde anche il problema: se il tasto apre il browser su un telefono che ha
 MEGA, si guarda `<queries>` prima di guardare il codice.
 
-#### 12. Warning KSP sui source set Kotlin
+#### 12. Ricaricare una cartella cancellava il lavoro dell'utente
+
+*Sintomo:* dopo aver ricollegato lo stesso link per aggiornare una cartella,
+le stelline erano sparite e i commenti avevano perso il loro punto sulla
+timeline — c'erano, ma non si vedeva più a che minuto stavano.
+
+*Causa:* le tracce venivano sostituite in blocco con quelle appena lette da
+MEGA. Ma **MEGA sa solo tre cose**: come si chiama il file, quanto pesa e il
+suo handle. Voti, rinomine, durata, ascolti e punti riascoltati sono roba
+nostra, e ricostruire la traccia da capo li buttava via.
+
+I commenti in realtà sopravvivevano — hanno una tabella loro — ma perdevano
+il riferimento visivo, perché con `durataSecondi` azzerata la timeline non sa
+più dove piazzare il marker. Una causa sola, due sintomi diversi.
+
+*Fix:* la traccia esistente si riconosce dall'handle, che non cambia mai, e si
+conserva. Da MEGA si riprende solo il titolo, e nemmeno quello se era stato
+rinominato a mano.
+
+*Da ricordare:* è **lo stesso errore** già fatto col nome della cartella, in
+un altro punto del codice. La regola generale: quando si rilegge una sorgente
+esterna, tutto ciò che quella sorgente non conosce va conservato, non
+ricostruito. Vale per MEGA oggi e varrà per Firestore domani.
+
+#### 13. Warning KSP sui source set Kotlin
 
 *Fix applicato:* `android.disallowKotlinSourceSets=false` in `gradle.properties`.
 
