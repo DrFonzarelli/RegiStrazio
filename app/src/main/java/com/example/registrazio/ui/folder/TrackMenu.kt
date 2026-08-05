@@ -118,11 +118,15 @@ fun TrackMenu(
                             else -> AppIcons.Cloud
                         },
                         etichetta = when {
-                            // Quattro stati, non due: durante lo scaricamento
+                            // Cinque stati, non due: durante lo scaricamento
                             // "Scarica sul telefono" sarebbe una bugia e non
                             // direbbe come fermarsi; a download fermo la voce
-                            // deve offrire la ripresa, non un nuovo inizio.
+                            // deve offrire la ripresa, non un nuovo inizio; e
+                            // una traccia in fila non è ancora partita, quindi
+                            // "interrompi" prometterebbe di fermare qualcosa
+                            // che non è cominciato.
                             scaricamento?.inPausa == true -> "Riprendi scaricamento"
+                            scaricamento?.inAttesa == true -> "Togli dalla coda"
                             scaricamento != null -> "Interrompi scaricamento"
                             traccia.scaricata -> "Rimuovi dal telefono"
                             else -> "Scarica sul telefono"

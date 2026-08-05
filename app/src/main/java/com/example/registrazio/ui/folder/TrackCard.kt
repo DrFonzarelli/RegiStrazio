@@ -57,6 +57,7 @@ import androidx.compose.ui.unit.sp
 import com.example.registrazio.data.model.Commento
 import com.example.registrazio.data.model.Traccia
 import com.example.registrazio.data.model.VotoStella
+import com.example.registrazio.ui.FaseDownload
 import com.example.registrazio.ui.StatoScaricamento
 import com.example.registrazio.ui.components.AppIconButton
 import com.example.registrazio.ui.components.AppTextField
@@ -307,7 +308,12 @@ fun TrackCard(
                 // quando il download non c'è, e la card salterebbe su e giù ogni
                 // volta che compare la percentuale.
                 scaricamento != null -> {
-                    val tinta = if (scaricamento.inPausa) colors.textMuted else colors.accent
+                    // Accent solo mentre scarica davvero. Una traccia in fila o
+                    // ferma è spenta: se fossero tutte accese, dieci tracce
+                    // accodate direbbero "stiamo scaricando dieci cose", che è
+                    // proprio quello che la coda evita di fare.
+                    val attiva = scaricamento.fase == FaseDownload.CORSO
+                    val tinta = if (attiva) colors.accent else colors.textMuted
                     Row(
                         Modifier
                             .clip(Radius.pillShape)
@@ -320,9 +326,18 @@ fun TrackCard(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        Text("${(scaricamento.frazione * 100).toInt()}%", color = tinta, fontSize = 11.sp)
-                        // Pausa mentre scarica, play quando è fermo: l'icona dice
-                        // cosa succede se la tocchi, non in che stato sei.
+                        Text(
+                            // "In attesa" al posto di uno 0% che sembrerebbe un
+                            // download partito e piantato. A metà il numero
+                            // torna, perché lì dice qualcosa di vero.
+                            if (scaricamento.inAttesa && scaricamento.frazione <= 0f) "In attesa"
+                            else "${(scaricamento.frazione * 100).toInt()}%",
+                            color = tinta,
+                            fontSize = 11.sp
+                        )
+                        // L'icona dice cosa succede se la tocchi, non in che
+                        // stato sei: pausa mentre scarica o mentre aspetta il
+                        // turno, play quando è ferma.
                         AppIcon(
                             if (scaricamento.inPausa) AppIcons.Play else AppIcons.Pause,
                             10.dp,

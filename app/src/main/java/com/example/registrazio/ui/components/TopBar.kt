@@ -31,6 +31,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.registrazio.R
+import com.example.registrazio.ui.theme.AppIcon
 import com.example.registrazio.ui.theme.AppIcons
 import com.example.registrazio.ui.theme.AppTheme
 
@@ -58,7 +59,8 @@ fun AppTopBar(
     onCambiaTema: () -> Unit,
     onAggiorna: () -> Unit,
     modifier: Modifier = Modifier,
-    mostraAggiorna: Boolean = true
+    mostraAggiorna: Boolean = true,
+    scaricamentiAttivi: Int = 0
 ) {
     val colors = AppTheme.colors
 
@@ -122,6 +124,29 @@ fun AppTopBar(
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f)
         )
+
+        // Un download in corso si vede da qualunque schermata, non solo dalla
+        // cartella che lo ospita: se ne accorge chi è andato altrove, che è
+        // esattamente chi non ha modo di sapere che sta ancora succedendo.
+        if (scaricamentiAttivi > 0) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(3.dp),
+                modifier = Modifier.padding(end = 4.dp)
+            ) {
+                AppIcon(AppIcons.Cloud, 14.dp, colors.accent)
+                // Il numero solo quando è più di uno: "1" accanto a una nuvola
+                // non aggiunge niente a quello che la nuvola già dice.
+                if (scaricamentiAttivi > 1) {
+                    Text(
+                        text = scaricamentiAttivi.toString(),
+                        color = colors.accent,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+        }
 
         avatar?.invoke()
 

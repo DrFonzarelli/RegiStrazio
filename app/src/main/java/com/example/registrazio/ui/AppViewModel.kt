@@ -37,6 +37,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -72,13 +73,6 @@ data class StatoRiproduzione(
     val audioAttivo: Boolean = false
 )
 
-/** Avanzamento dello "Scarica tutte" sulla cartella aperta. */
-data class StatoBulkDownload(
-    val cartellaId: String,
-    val completate: Int,
-    val totali: Int
-)
-
 /** Messaggio effimero; [seq] serve a rimostrare lo stesso testo due volte di fila. */
 data class Messaggio(val testo: String, val seq: Long)
 
@@ -91,7 +85,6 @@ data class AppState(
     val profiliDisponibili: List<Utente> = emptyList(),
     val ordinamento: Ordinamento = Ordinamento.DEFAULT,
     val riproduzione: StatoRiproduzione = StatoRiproduzione(),
-    val bulkDownload: StatoBulkDownload? = null,
     val messaggio: Messaggio? = null,
     val collegamento: StatoCollegamento = StatoCollegamento(),
     /** Quante righe aspettano di finire su Firestore: è il badge del tasto Sincronizza. */
@@ -103,14 +96,6 @@ data class AppState(
      * della lettura di una cartella, che è una chiamata sola e non si misura.
      */
     val scaricamenti: Map<String, StatoScaricamento> = emptyMap(),
-    /**
-     * La cartella il cui "Scarica tutte" è in pausa, `null` se non ce n'è uno.
-     *
-     * È un id e non un booleano perché il tasto sta dentro una cartella: uno
-     * "sì, in pausa" senza dire di quale accenderebbe il tasto anche nelle
-     * cartelle che non c'entrano niente.
-     */
-    val bulkInPausa: String? = null,
     /** Vedi [RichiestaCommento]: la barra in ascolto chiede alla card di aprirsi. */
     val richiestaCommento: RichiestaCommento? = null
 )
@@ -133,7 +118,21 @@ data class RichiestaCommento(val tracciaId: String, val seq: Int)
  * [inPausa] distingue "sta scaricando" da "si è fermato lì": il file parziale
  * resta sul telefono in entrambi i casi, e riprendere non ricomincia da zero.
  */
-data class StatoScaricamento(val frazione: Float, val inPausa: Boolean)
+/**
+ * Dove si trova una traccia nella coda dei download.
+ *
+ * Tre stati e non due: prima "in attesa" non esisteva, e una traccia messa in
+ * fila si presentava identica a una che stava scaricando — con la percentuale
+ * ferma, perché nessuno la stava toccando. Metà della confusione stava lì.
+ */
+enum class FaseDownload { ATTESA, CORSO, PAUSA }
+
+data class StatoScaricamento(val frazione: Float, val fase: FaseDownload) {
+    /** Ferma per volontà di qualcuno, non perché sta aspettando il suo turno. */
+    val inPausa: Boolean get() = fase == FaseDownload.PAUSA
+
+    val inAttesa: Boolean get() = fase == FaseDownload.ATTESA
+}
 
 /**
  * Testo arrivato dal menu "Condividi" di un'altra app.
@@ -193,13 +192,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     /** File audio già sul telefono, per id traccia. */
     private val fileLocali = mutableMapOf<String, File>()
-    private val jobDownload = mutableMapOf<String, Job>()
 
     private var seqCommento = 1
-
-    /** Tracce che lo "Scarica tutte" deve ancora smaltire, in ordine. */
-    private var codaBulk = listOf<String>()
-    private var cartellaBulk: String? = null
 
     /**
      * Scope a parte per le scritture su disco.
@@ -237,7 +231,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * ricaricare.
      */
     private var caricataDaFile = false
-    private var bulkJob: Job? = null
     private var seqMessaggi = 0L
 
     /** Condivisione arrivata prima dell'onboarding: si riprende dopo il Gate. */
@@ -336,7 +329,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             if (presi <= 0) return@mapNotNull null
             t.id to StatoScaricamento(
                 frazione = (presi.toFloat() / t.dimensioneByte).coerceIn(0f, 1f),
-                inPausa = true
+                fase = FaseDownload.PAUSA
             )
         }.toMap()
 
@@ -961,54 +954,189 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     // ---------- download ----------
+    //
+    // C'è **una coda sola**, e passa di lì tutto quello che si scarica: il
+    // tasto sulla singola traccia e lo "Scarica tutte" accodano, non scaricano.
+    //
+    // Prima erano due meccanismi paralleli — `avviaDownload` con la sua mappa di
+    // job, `avviaBulk` con la sua coda — ognuno con il proprio stato e le
+    // proprie regole di pausa. Separatamente funzionavano; ogni guaio nasceva
+    // dove si toccavano, e ogni rattoppo ne scopriva un altro, perché domande
+    // come "se fermo una singola si ferma anche la coda?" non avevano una
+    // risposta: dipendeva da chi arrivava primo. Con una coda sola non ci sono
+    // più due strade da far coesistere, e quelle domande hanno una risposta per
+    // costruzione.
+    //
+    // Una traccia alla volta, come fanno le app di musica: su una linea lenta
+    // dieci download in parallelo si dividono la banda e finiscono tutti tardi,
+    // mentre in fila la prima è ascoltabile quasi subito. In più MEGA è un
+    // servizio pubblico, e molte connessioni insieme sono il modo migliore per
+    // farsi rallentare.
 
     /**
-     * Il tasto download della traccia, che ha quattro significati a seconda di
-     * dove si trova la traccia: scarica, metti in pausa, riprendi, rimuovi.
+     * Gli id in attesa, in ordine di arrivo. Il primo è il prossimo a partire.
+     *
+     * Non contiene quello in corso: quello è [scaricamentoCorrente].
+     */
+    private var coda = listOf<String>()
+
+    /** La traccia che sta scaricando adesso, `null` se la coda è ferma. */
+    private var scaricamentoCorrente: String? = null
+
+    /** Lo scaricamento in corso, da poter fermare senza fermare la coda. */
+    private var jobCorrente: Job? = null
+
+    /** Il ciclo che smaltisce la coda. Ce n'è al massimo uno. */
+    private var workerCoda: Job? = null
+
+    /**
+     * Il tasto download della traccia. Cinque significati, uno per stato.
+     *
+     * Nessuno di questi avvia un download davvero: mettono o tolgono dalla
+     * coda, e a scaricare ci pensa [assicuraWorker].
      */
     fun cambiaDownload(tracciaId: String) {
         val traccia = traccia(tracciaId) ?: return
-        val stato = _state.value.scaricamenti[tracciaId]
 
-        when {
-            // Sta scaricando -> pausa. Il file parziale resta dov'è.
-            stato != null && !stato.inPausa -> pausaDownload(tracciaId)
+        when (_state.value.scaricamenti[tracciaId]?.fase) {
+            // Sta scaricando -> pausa. Il parziale resta dov'è e la coda
+            // prosegue con la prossima: fermare una traccia vuol dire fermare
+            // quella, non tutto il resto.
+            FaseDownload.CORSO -> fermaScaricamento(tracciaId)
 
-            // Era in pausa -> riprendi solo questa. Il resto della coda,
-            // se c'era, resta fermo: chi tocca una traccia parla di quella.
-            stato != null -> avviaDownload(traccia)
+            // In fila e non ancora partita -> esce dalla fila.
+            FaseDownload.ATTESA -> {
+                coda = coda - tracciaId
+                segnaFase(tracciaId, FaseDownload.PAUSA)
+            }
 
-            traccia.scaricata -> rimuoviDalTelefono(traccia)
+            // Ferma a metà -> torna in fila.
+            FaseDownload.PAUSA -> accoda(listOf(tracciaId))
 
-            traccia.daMega -> avviaDownload(traccia)
+            null -> when {
+                traccia.scaricata -> rimuoviDalTelefono(traccia)
+                traccia.daMega -> accoda(listOf(tracciaId))
+                else -> Unit
+            }
         }
     }
 
     /**
-     * Ferma un download lasciando sul posto quello che ha già preso.
+     * Mette in fila quello che non c'è già, e sveglia il worker.
      *
-     * Se stava girando lo "Scarica tutte", si ferma anche quello: chi mette in
-     * pausa mentre la coda avanza vuole fermare la coda, non vedersi partire la
-     * traccia successiva un istante dopo.
+     * Le tracce già scaricate o già in fila non si ripetono: la coda non deve
+     * poter contenere due volte la stessa traccia, o si scaricherebbe due volte
+     * sullo stesso `.parziale`.
      */
-    private fun pausaDownload(tracciaId: String) {
-        // La coda si ferma solo se questa traccia è sua. Fermare lo "Scarica
-        // tutte" della cartella A perché si è messo in pausa un download avviato
-        // a mano nella cartella B sarebbe un effetto che nessuno ha chiesto.
-        val dellaCoda = bulkJob?.isActive == true &&
-            traccia(tracciaId)?.cartellaId == cartellaBulk
+    private fun accoda(ids: List<String>) {
+        val nuovi = ids.filter { id ->
+            id != scaricamentoCorrente &&
+                id !in coda &&
+                traccia(id)?.let { it.daMega && !it.scaricata } == true
+        }
+        if (nuovi.isEmpty()) return
 
-        jobDownload.remove(tracciaId)?.cancel()
-        if (dellaCoda) bulkJob?.cancel()
-
+        coda = coda + nuovi
         _state.update { s ->
-            val corrente = s.scaricamenti[tracciaId] ?: StatoScaricamento(0f, true)
             s.copy(
-                scaricamenti = s.scaricamenti + (tracciaId to corrente.copy(inPausa = true)),
-                bulkDownload = if (dellaCoda) null else s.bulkDownload,
-                bulkInPausa = if (dellaCoda) cartellaBulk else s.bulkInPausa
+                scaricamenti = s.scaricamenti + nuovi.associateWith { id ->
+                    // La percentuale di partenza è quella già sul disco: una
+                    // traccia rimessa in fila dopo una pausa non deve tornare a
+                    // zero solo perché è tornata in attesa.
+                    StatoScaricamento(frazioneGiaPresa(id), FaseDownload.ATTESA)
+                }
             )
         }
+        assicuraWorker()
+    }
+
+    /** Ferma lo scaricamento in corso lasciando sul posto quello che ha preso. */
+    private fun fermaScaricamento(tracciaId: String) {
+        segnaFase(tracciaId, FaseDownload.PAUSA)
+        if (scaricamentoCorrente == tracciaId) jobCorrente?.cancel()
+    }
+
+    /**
+     * Il ciclo che smaltisce la coda, uno alla volta.
+     *
+     * Vive finché c'è qualcosa da fare e poi si spegne: non è un servizio
+     * sempre acceso, è il consumatore della coda. Chi accoda lo risveglia.
+     *
+     * Il ciclo si spegne quando trova la coda vuota, e fra quel controllo e
+     * l'azzeramento di `workerCoda` non c'è nessuna sospensione: [accoda] non
+     * può infilarsi in mezzo e trovare un worker "vivo" che sta per morire,
+     * lasciando la coda senza nessuno che la smaltisca. Regge perché entrambi
+     * girano sul dispatcher principale di `viewModelScope` — spostare uno dei
+     * due su un thread di fondo riaprirebbe quella finestra.
+     */
+    private fun assicuraWorker() {
+        if (workerCoda?.isActive == true) return
+
+        workerCoda = viewModelScope.launch {
+            while (true) {
+                val id = coda.firstOrNull() ?: break
+                coda = coda.drop(1)
+
+                val traccia = traccia(id)
+                if (traccia == null || traccia.scaricata) {
+                    _state.update { it.copy(scaricamenti = it.scaricamenti - id) }
+                    continue
+                }
+
+                scaricamentoCorrente = id
+                segnaFase(id, FaseDownload.CORSO)
+
+                // Il download è un figlio a parte, non il corpo del ciclo:
+                // mettendo in pausa *questa* traccia si cancella lui, e la coda
+                // resta viva per passare alla prossima.
+                val figlio = viewModelScope.async { scaricaUna(traccia) }
+                jobCorrente = figlio
+                val errore = try {
+                    figlio.await()
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    // Pausa chiesta dall'utente: lo stato l'ha già scritto chi
+                    // l'ha chiesta, e la coda deve proseguire. Non si rilancia,
+                    // o si porterebbe dietro il ciclo che invece deve vivere.
+                    ensureActive()
+                    null
+                } finally {
+                    scaricamentoCorrente = null
+                    jobCorrente = null
+                }
+
+                if (errore != null) {
+                    segnaFase(id, FaseDownload.PAUSA)
+                    mostra(errore)
+                    // Senza linea le prossime fallirebbero tutte allo stesso
+                    // modo: si svuota la coda invece di sfilare cinque errori
+                    // uno dietro l'altro. Le tracce restano in pausa, pronte.
+                    if (errore == SENZA_RETE) {
+                        val rimaste = coda
+                        coda = emptyList()
+                        rimaste.forEach { segnaFase(it, FaseDownload.PAUSA) }
+                        break
+                    }
+                }
+            }
+            workerCoda = null
+        }
+    }
+
+    /** Cambia la fase di una traccia lasciando dov'è la percentuale. */
+    private fun segnaFase(tracciaId: String, fase: FaseDownload) {
+        _state.update { s ->
+            val corrente = s.scaricamenti[tracciaId]
+                ?: StatoScaricamento(frazioneGiaPresa(tracciaId), fase)
+            s.copy(scaricamenti = s.scaricamenti + (tracciaId to corrente.copy(fase = fase)))
+        }
+    }
+
+    /** Quanto di questa traccia è già sul disco, come frazione da 0 a 1. */
+    private fun frazioneGiaPresa(tracciaId: String): Float {
+        val peso = traccia(tracciaId)?.dimensioneByte ?: 0L
+        if (peso <= 0L) return 0f
+        val presi = scaricatore.byteGiaPresi(File(cartellaAudio(), "$tracciaId.audio"))
+        return (presi.toFloat() / peso).coerceIn(0f, 1f)
     }
 
     private fun rimuoviDalTelefono(traccia: Traccia) {
@@ -1031,28 +1159,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private fun avviaDownload(traccia: Traccia) {
-        if (jobDownload[traccia.id]?.isActive == true) return
-        val job = viewModelScope.launch {
-            val errore = scaricaUna(traccia)
-            when {
-                errore != null -> mostra(errore)
-                // Se la voce è sparita il file è arrivato in fondo; se c'è
-                // ancora, ci siamo fermati a metà e non c'è niente da annunciare.
-                _state.value.scaricamenti[traccia.id] == null ->
-                    mostra("\"${traccia.titolo}\" è sul telefono")
-            }
-        }
-        jobDownload[traccia.id] = job
-        // Si toglie dalla mappa solo se lì c'è ancora *questo* job. Pausa e
-        // ripresa rapide creano un secondo job per la stessa traccia, e il
-        // primo, morendo, cancellerebbe la voce del secondo.
-        job.invokeOnCompletion { if (jobDownload[traccia.id] === job) jobDownload.remove(traccia.id) }
-    }
-
     /**
-     * Scarica una traccia. Restituisce `null` se è finita o se è stata messa in
-     * pausa, altrimenti il messaggio d'errore da mostrare.
+     * Scarica una traccia. Restituisce `null` se è finita, altrimenti il
+     * messaggio d'errore da mostrare.
      */
     private suspend fun scaricaUna(traccia: Traccia): String? {
         if (!traccia.daMega) return null
@@ -1069,20 +1178,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
         val destinazione = File(cartellaAudio(), "${traccia.id}.audio")
 
-        // La percentuale di partenza si legge dal disco, non dalla memoria:
-        // il `.parziale` sopravvive alla chiusura dell'app, lo stato no. Il
-        // valore in memoria resta il ripiego per quando il peso del file è
-        // ignoto — una cartella collegata prima che questo campo esistesse.
-        val partenza = if (traccia.dimensioneByte > 0) {
-            (scaricatore.byteGiaPresi(destinazione).toFloat() / traccia.dimensioneByte)
-                .coerceIn(0f, 1f)
-        } else {
-            _state.value.scaricamenti[traccia.id]?.frazione ?: 0f
-        }
-        _state.update {
-            it.copy(scaricamenti = it.scaricamenti + (traccia.id to StatoScaricamento(partenza, false)))
-        }
-
         return try {
             scaricatore.scarica(
                 link,
@@ -1092,17 +1187,17 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 traccia.dimensioneByte
             ) { frazione ->
                 _state.update { s ->
-                    // **Il progresso aggiorna solo il numero, mai `inPausa`.**
+                    // **Il progresso aggiorna solo il numero, mai la fase.**
                     //
                     // `cancel()` è cooperativo e non interrompe una `read()` già
                     // in volo: dopo la richiesta di pausa arriva ancora un
-                    // aggiornamento, e scrivendo `inPausa = false` rimetteva la
-                    // traccia in stato "sta scaricando" un istante dopo che
-                    // l'utente l'aveva fermata. Serviva un secondo tap per
-                    // vedere l'effetto del primo.
+                    // aggiornamento, e riscrivendo la fase rimetteva la traccia
+                    // in "sta scaricando" un istante dopo che l'utente l'aveva
+                    // fermata. Serviva un secondo tap per vedere l'effetto del
+                    // primo.
                     //
-                    // Il flag appartiene a chi dà i comandi (icona, kebab,
-                    // "Scarica tutte"), non a chi riporta i byte.
+                    // La fase appartiene a chi dà i comandi, non a chi riporta
+                    // i byte.
                     val corrente = s.scaricamenti[traccia.id] ?: return@update s
                     s.copy(
                         scaricamenti = s.scaricamenti +
@@ -1121,11 +1216,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             // La pausa passa di qui: lo stato l'ha già scritto chi l'ha chiesta.
             throw e
         } catch (e: Throwable) {
-            // Anche un errore lascia il parziale: riprovando si continua da lì.
-            _state.update { s ->
-                val corrente = s.scaricamenti[traccia.id] ?: StatoScaricamento(0f, true)
-                s.copy(scaricamenti = s.scaricamenti + (traccia.id to corrente.copy(inPausa = true)))
-            }
             // Un trasferimento che si pianta non è "sei senza linea": la linea
             // c'era, e soprattutto metà file è già sul telefono. Dire la frase
             // generica qui farebbe temere di dover ricominciare da capo.
@@ -1135,9 +1225,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 spiegaErroreDiRete(e)
             }
         }
-        // Nessun `finally` che tolga il job dalla mappa: ci pensa
-        // `avviaDownload` con il controllo d'identità, e da "Scarica tutte"
-        // questa funzione gira senza una voce propria nella mappa.
     }
 
     /**
@@ -1157,119 +1244,42 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         else -> e.message?.takeIf { it.isNotBlank() } ?: "Qualcosa è andato storto."
     }
 
-    /**
-     * `cacheDir` e non `filesDir`: se il telefono ha bisogno di spazio è giusto
-     * che possa buttare l'audio, che si riscarica sempre da MEGA. Il controllo
-     * sull'esistenza del file al play copre proprio questo caso.
-     */
     private fun cartellaAudio(): File =
         File(getApplication<Application>().cacheDir, "audio").also { it.mkdirs() }
 
     /**
-     * Il tasto "Scarica tutte", che è anche il tasto "metti in pausa tutte" e
-     * "riprendi tutte", a seconda di cosa sta succedendo.
+     * Il tasto in cima alla cartella: accoda tutto quello che manca, oppure
+     * ferma tutto se qualcosa è già in ballo.
+     *
+     * Non è "il tasto della coda" contrapposto a quelli delle singole tracce:
+     * la coda è una sola, e questo ne è la scorciatoia per riempirla o
+     * svuotarla. Per questo diventa "Ferma tutte" anche quando l'unica cosa in
+     * ballo è un download avviato a mano — sono la stessa fila.
      */
     fun scaricaTutte(cartellaId: String) {
-        if (bulkJob?.isActive == true) {
-            pausaBulk()
-            return
+        val tracce = traccePerCartella(cartellaId)
+        val attive = tracce.filter { t ->
+            _state.value.scaricamenti[t.id]?.fase.let {
+                it == FaseDownload.CORSO || it == FaseDownload.ATTESA
+            }
         }
-        if (_state.value.bulkInPausa == cartellaId && codaBulk.isNotEmpty()) {
-            avviaBulk(cartellaId, codaBulk)
+
+        if (attive.isNotEmpty()) {
+            attive.forEach { t ->
+                coda = coda - t.id
+                fermaScaricamento(t.id)
+                segnaFase(t.id, FaseDownload.PAUSA)
+            }
+            mostra("Scaricamento in pausa")
             return
         }
 
-        val mancanti = traccePerCartella(cartellaId).filterNot { it.scaricata }
+        val mancanti = tracce.filterNot { it.scaricata }
         if (mancanti.isEmpty()) {
             mostra("Sono già tutte sul telefono")
             return
         }
-        avviaBulk(cartellaId, mancanti.map { it.id })
-    }
-
-    private fun pausaBulk() {
-        val cartella = cartellaBulk
-        bulkJob?.cancel()
-
-        // Solo le tracce di *questa* cartella: il tasto sta lì dentro e parla di
-        // quello che si vede. Un download avviato a mano altrove non c'entra e
-        // non deve fermarsi.
-        val suoi = traccePerCartella(cartella.orEmpty()).map { it.id }.toSet()
-        suoi.forEach { jobDownload.remove(it)?.cancel() }
-
-        _state.update { s ->
-            s.copy(
-                bulkDownload = null,
-                bulkInPausa = cartella,
-                // Le tracce a metà restano a metà, segnate come ferme.
-                scaricamenti = s.scaricamenti.mapValues { (id, v) ->
-                    if (id in suoi) v.copy(inPausa = true) else v
-                }
-            )
-        }
-        mostra("Scaricamento in pausa")
-    }
-
-    private fun avviaBulk(cartellaId: String, ids: List<String>) {
-        cartellaBulk = cartellaId
-        codaBulk = ids
-        _state.update { it.copy(bulkInPausa = null) }
-
-        val totali = traccePerCartella(cartellaId).size
-        val giaFatte = traccePerCartella(cartellaId).count { it.scaricata }
-        // Subito, non dopo la prima traccia: altrimenti per tutto il primo
-        // scaricamento il tasto direbbe ancora "Scarica tutte".
-        _state.update { it.copy(bulkDownload = StatoBulkDownload(cartellaId, giaFatte, totali)) }
-
-        bulkJob = viewModelScope.launch {
-            var falliti = 0
-            var tentate = 0
-            // Una alla volta e non tutte insieme: cinque download in parallelo
-            // si rubano la banda a vicenda e finiscono tutti più tardi.
-            for (id in ids) {
-                val t = traccia(id) ?: continue
-                if (t.scaricata) { codaBulk = codaBulk - id; continue }
-                // Sta già scaricando perché qualcuno l'ha avviata a mano: la
-                // coda non la raddoppia. Due discese sullo stesso file
-                // scrivono sullo stesso `.parziale` e si contendono la barra.
-                if (jobDownload[id]?.isActive == true) { codaBulk = codaBulk - id; continue }
-                tentate++
-
-                // La coda lascia il proprio job in `jobDownload` come farebbe
-                // `avviaDownload`. Prima chiamava `scaricaUna` dritta, senza
-                // comparire lì: la guardia contro il doppio avvio proteggeva
-                // la coda dal tasto singolo, ma non il tasto singolo dalla
-                // coda — perché per lui quella traccia risultava ferma. Una
-                // mappa sola, e le due strade si vedono a vicenda.
-                val figlio = async { scaricaUna(t) }
-                jobDownload[id] = figlio
-                val errore = try {
-                    figlio.await()
-                } finally {
-                    if (jobDownload[id] === figlio) jobDownload.remove(id)
-                }
-                // Senza linea le altre falliranno tutte allo stesso modo: meglio
-                // fermare la coda e lasciarla pronta a ripartire che sfilare
-                // cinque errori uno dietro l'altro.
-                if (errore == SENZA_RETE) {
-                    _state.update { it.copy(bulkDownload = null, bulkInPausa = cartellaId) }
-                    mostra(SENZA_RETE)
-                    return@launch
-                }
-                if (errore != null) falliti++
-                codaBulk = codaBulk - id
-                val fatte = traccePerCartella(cartellaId).count { it.scaricata }
-                _state.update { s -> s.copy(bulkDownload = StatoBulkDownload(cartellaId, fatte, totali)) }
-            }
-            _state.update { it.copy(bulkDownload = null, bulkInPausa = null) }
-            mostra(
-                when {
-                    falliti == 0 -> "Tutte le tracce sono sul telefono"
-                    falliti == tentate -> "Non sono riuscito a scaricare niente"
-                    else -> "Scaricate ${tentate - falliti} su $tentate"
-                }
-            )
-        }
+        accoda(mancanti.map { it.id })
     }
 
     // ---------- cartelle ----------
@@ -1691,7 +1701,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     override fun onCleared() {
         playJob?.cancel()
-        bulkJob?.cancel()
+        workerCoda?.cancel()
         // Senza questa il player continuerebbe a tenersi socket e decoder.
         player.scollega()
         // `scrittura` non si annulla apposta: una scrittura partita un istante

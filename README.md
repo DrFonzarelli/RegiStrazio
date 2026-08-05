@@ -1040,6 +1040,8 @@ perché la BOM non le mostra): Firestore `26.5.0`, Auth `24.2.0`.
 | Commento dalla notifica | 🟡 | schermatina col lucchetto, minutaggio congelato all'apertura: **da provare** |
 | Download reale su disco | ✅ | **provato**: scarica, decifra, suona da locale, si rimuove |
 | Pausa e ripresa del download | ✅ | **provata**: riprende da dove era, dai tre comandi |
+| Coda unica dei download | 🟡 | un solo consumatore, una traccia alla volta: **da provare** |
+| Download con app chiusa | ❌ | vivono in `viewModelScope`; serve un foreground service |
 | Riproduzione dal file locale | ✅ | **provata**, anche togliendo il file mentre suona |
 
 Detto in modo diretto, perché sono le domande che vengono naturali:
@@ -1886,6 +1888,62 @@ le due strade si vedono a vicenda.
 *Da ricordare:* quando due strade portano alla stessa operazione, una guardia
 su una sola delle due non è mezza protezione — è protezione in una direzione
 sola, che è il modo migliore per crederla completa.
+
+---
+
+### Come funzionano i download
+
+**C'è una coda sola, e ci passa tutto.** Il tasto sulla singola traccia e lo
+"Scarica tutte" non scaricano: **accodano**. A scaricare c'è un solo
+consumatore, che prende una traccia alla volta.
+
+Prima erano due meccanismi paralleli — `avviaDownload` con la sua mappa di job,
+`avviaBulk` con la sua coda — ognuno con il proprio stato e le proprie regole
+di pausa. Separatamente funzionavano. Ogni guaio nasceva dove si toccavano, e
+ogni rattoppo ne scopriva un altro: gli errori 30 e 33 sono lo stesso difetto
+trovato due volte. Domande come *"se fermo una singola si ferma anche la
+coda?"* non avevano risposta perché il codice non ne aveva una — dipendeva da
+chi arrivava primo.
+
+Con una coda sola quelle domande hanno una risposta per costruzione:
+
+| Gesto | Cosa succede |
+|---|---|
+| Scarica su una traccia | va in fondo alla fila |
+| Pausa su quella in corso | si ferma **solo quella**, la coda passa alla prossima |
+| Pausa su una in attesa | esce dalla fila, resta il parziale |
+| "Scarica tutte" | accoda tutte le mancanti della cartella |
+| "Scarica tutte" mentre qualcosa gira | diventa **"Ferma tutte"** e svuota la fila |
+| Errore di rete su una traccia | quella va in pausa; se è "senza linea" si ferma anche il resto, che fallirebbe uguale |
+
+**Una alla volta**, come fanno Spotify, YouTube Music e Pocket Casts. Su una
+linea lenta dieci download in parallelo si dividono la banda e finiscono tutti
+tardi, mentre in fila la prima traccia è ascoltabile quasi subito. In più MEGA
+è un servizio pubblico: molte connessioni insieme sono il modo migliore per
+farsi rallentare.
+
+**Tre fasi, non due:** `ATTESA`, `CORSO`, `PAUSA`. "In attesa" prima non
+esisteva, e una traccia in fila si presentava identica a una che stava
+scaricando — con la percentuale ferma, perché nessuno la stava toccando. Era
+metà della confusione. Ora solo la traccia in `CORSO` è in accent; le altre
+sono spente, e il tasto in cima dice "Ferma tutte".
+
+**La fase appartiene a chi dà i comandi, non a chi riporta i byte.**
+`onProgresso` aggiorna solo il numero: `cancel()` è cooperativo e non
+interrompe una `read()` già in volo, quindi dopo una pausa arriva ancora un
+aggiornamento, e se quello riscrivesse la fase rimetterebbe la traccia in
+"sta scaricando" un istante dopo che l'utente l'ha fermata.
+
+**Il worker si spegne quando la coda è vuota** e viene risvegliato da chi
+accoda. Fra il controllo "coda vuota" e l'azzeramento di `workerCoda` non c'è
+nessuna sospensione: `accoda` non può infilarsi in mezzo e trovare un worker
+che sta per morire. Regge perché entrambi girano sul dispatcher principale —
+spostarne uno su un thread di fondo riaprirebbe quella finestra.
+
+**Quello che ancora manca:** i download vivono in `viewModelScope`, quindi se
+Android chiude l'app si fermano. La topbar mostra una nuvoletta finché
+qualcosa è in coda, ma è un indicatore in-app: serve un foreground service con
+notifica di progresso perché sopravvivano davvero.
 
 ---
 

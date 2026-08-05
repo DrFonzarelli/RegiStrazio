@@ -86,7 +86,12 @@ fun FolderScreen(
                 // Somma le frazioni dei download in corso: senza, la barra
                 // resterebbe ferma per tutta una traccia e poi salterebbe di
                 // colpo. È comunque una misura vera, solo più fine.
-                parzialeInCorso = scaricamenti.values.map { it.frazione }.sum(),
+                // Solo le tracce di questa cartella: `scaricamenti` è la coda
+                // intera, e sommarla tutta gonfierebbe la barra con il lavoro
+                // fatto altrove.
+                parzialeInCorso = tracce.sumOf { t ->
+                    (scaricamenti[t.id]?.frazione ?: 0f).toDouble()
+                }.toFloat(),
                 inCorso = bulkInCorso,
                 inPausa = bulkInPausa,
                 onCambiaOrdinamento = onCambiaOrdinamento,
@@ -171,8 +176,12 @@ private fun BulkDownloadButton(
 
     val etichetta = when {
         complete -> "Tutte scaricate"
+        // Mentre la coda gira il tasto ferma tutto, e deve dirlo: è l'unico
+        // modo di svuotare la fila in un colpo, e vale anche quando in fila
+        // c'è una traccia sola messa a mano — la coda è una.
+        inCorso -> "Ferma tutte · $scaricate/$totali"
         inPausa -> "Riprendi $scaricate/$totali"
-        scaricate > 0 || inCorso -> "$scaricate/$totali scaricate"
+        scaricate > 0 -> "$scaricate/$totali scaricate"
         else -> "Scarica tutte"
     }
 

@@ -177,7 +177,10 @@ fun AppRoot(
                     onIndietro = vm::tornaHome,
                     onCambiaTema = vm::cambiaTema,
                     onAggiorna = vm::aggiorna,
-                    mostraAggiorna = !gate
+                    mostraAggiorna = !gate,
+                    scaricamentiAttivi = state.scaricamenti.count {
+                        it.value.fase != FaseDownload.PAUSA
+                    }
                 )
 
                 val padding = PaddingValues(
@@ -221,12 +224,23 @@ fun AppRoot(
                                 .ordinate(state.ordinamento)
                             val scaricate = tracce.count { it.scaricata }
 
+                            // Lo stato del tasto in cima si legge dalle tracce
+                            // che ha davanti, non da un campo suo: la coda è
+                            // una sola e queste sono le sue righe in questa
+                            // cartella. Un secondo posto dove scriverlo
+                            // sarebbe un secondo posto da tenere allineato.
+                            val fasiQui = tracce.mapNotNull { state.scaricamenti[it.id]?.fase }
+                            val bulkInCorso = fasiQui.any {
+                                it == FaseDownload.CORSO || it == FaseDownload.ATTESA
+                            }
+                            val bulkInPausa = !bulkInCorso && fasiQui.any { it == FaseDownload.PAUSA }
+
                             FolderScreen(
                                 tracce = tracce,
                                 ordinamento = state.ordinamento,
                                 scaricateSuTotali = scaricate to tracce.size,
-                                bulkInCorso = state.bulkDownload?.cartellaId == schermata.cartellaId,
-                                bulkInPausa = state.bulkInPausa == schermata.cartellaId,
+                                bulkInCorso = bulkInCorso,
+                                bulkInPausa = bulkInPausa,
                                 tracciaInRiproduzione = state.riproduzione.tracciaId,
                                 inRiproduzione = state.riproduzione.inRiproduzione,
                                 audioAttivo = state.riproduzione.audioAttivo,
@@ -242,10 +256,7 @@ fun AppRoot(
                                     // riprendere non consuma niente di nuovo, e
                                     // farsi chiedere "sei sicuro?" per fermarsi
                                     // sarebbe solo un tap in mezzo ai piedi.
-                                    val giaAvviato =
-                                        state.bulkDownload?.cartellaId == schermata.cartellaId ||
-                                            state.bulkInPausa == schermata.cartellaId
-                                    if (giaAvviato) vm.scaricaTutte(schermata.cartellaId)
+                                    if (bulkInCorso || bulkInPausa) vm.scaricaTutte(schermata.cartellaId)
                                     else confermaBulk = schermata.cartellaId
                                 },
                                 azioniPerTraccia = { traccia ->
