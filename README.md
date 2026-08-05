@@ -1949,11 +1949,13 @@ irremovibili.
 
 **Il passaggio da streaming a file locale avviene alla prima interruzione.** Se
 il download finisce mentre la traccia suona, l'audio non si interrompe per
-rimettere lo stesso brano da un'altra sorgente. Ma alla prima pausa — o al
-primo salto a un commento, che l'audio lo interrompe comunque — si riparte dal
-file. `caricataDaFile` ricorda da dove il player stava leggendo **quando ha
-cominciato**: non basta guardare `fileLocali`, che dice solo se il file c'è
-adesso, ed è la differenza fra i due a dire se conviene ricaricare.
+rimettere lo stesso brano da un'altra sorgente. Ma le interruzioni che ci sono
+già si sfruttano tutte: la pausa, il salto a un commento e il trascinamento del
+cursore ripartono dal file. `caricataDaFile` ricorda da dove il player stava
+leggendo **quando ha cominciato**: non basta guardare `fileLocali`, che dice
+solo se il file c'è adesso, ed è la differenza fra i due a dire se conviene
+ricaricare. Il trascinamento è sicuro perché `onSposta` scatta una volta sola,
+al rilascio del dito — durante il movimento non arriva niente.
 
 **La sort bar occupa l'indice 0 della lista.** Ogni volta che si converte la
 posizione di una traccia in indice della `LazyColumn` serve `+1`. Sbagliarlo non

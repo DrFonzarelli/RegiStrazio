@@ -29,6 +29,7 @@ import com.example.registrazio.domain.player.ServizioRiproduzione
 import com.example.registrazio.domain.player.TracciaInAscolto
 import com.example.registrazio.util.OrdineNaturale
 import com.example.registrazio.util.senzaRete
+import com.example.registrazio.util.trasferimentoFermo
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -572,11 +573,26 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Trascinamento del playhead: sposta senza cambiare stato play/pausa. */
+    /**
+     * Trascinamento del playhead: sposta senza cambiare stato play/pausa.
+     *
+     * Arriva **una volta sola, al rilascio** del dito (vedi `Timeline.kt`), non
+     * a ogni movimento: per questo qui si può ricaricare la traccia senza
+     * rischiare di farlo cento volte in una trascinata.
+     */
     fun spostaCursore(tracciaId: String, secondi: Float) {
         val traccia = traccia(tracciaId) ?: return
         val durata = traccia.durataSecondi.toFloat()
         val nuova = if (durata > 0f) secondi.coerceIn(0f, durata) else secondi.coerceAtLeast(0f)
+
+        // Terza occasione buona, dopo la pausa e il salto a un commento: anche
+        // trascinare interrompe l'ascolto, quindi se il file nel frattempo è
+        // arrivato sul telefono si riparte da lì.
+        val r = _state.value.riproduzione
+        if (r.tracciaId == tracciaId && r.inRiproduzione && sorgenteSuperata(tracciaId)) {
+            avvia(tracciaId, nuova)
+            return
+        }
 
         if (_state.value.riproduzione.tracciaId == tracciaId && traccia.daMega) {
             player.cerca(nuova)
@@ -1110,7 +1126,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 val corrente = s.scaricamenti[traccia.id] ?: StatoScaricamento(0f, true)
                 s.copy(scaricamenti = s.scaricamenti + (traccia.id to corrente.copy(inPausa = true)))
             }
-            spiegaErroreDiRete(e)
+            // Un trasferimento che si pianta non è "sei senza linea": la linea
+            // c'era, e soprattutto metà file è già sul telefono. Dire la frase
+            // generica qui farebbe temere di dover ricominciare da capo.
+            if (trasferimentoFermo(e)) {
+                "Il trasferimento si è fermato. Riprendi per continuare da dove eravamo."
+            } else {
+                spiegaErroreDiRete(e)
+            }
         }
         // Nessun `finally` che tolga il job dalla mappa: ci pensa
         // `avviaDownload` con il controllo d'identità, e da "Scarica tutte"
