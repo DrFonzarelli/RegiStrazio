@@ -1466,6 +1466,54 @@ multiriga di sistema.
 standard. Se un componente si scosta da quello che fa il resto del mondo, la
 domanda giusta è "perché?", non "come lo miglioro?".
 
+#### 24. L'icona dell'app: da SVG a icona adattiva Android
+
+`Logo_RegiStrazio.svg` (nella root del repo) è la fonte: sagoma color crema di
+sfondo, poi un musetto — due occhi ad anello scuro con un riflesso bianco
+dietro il buco, un'onda scura, e una forma a nastro. Otto `<path>`/`<polygon>`
+in tutto, nessun comando d'arco insolito: si trascrivono 1:1 in vector
+drawable Android, che capisce la stessa sintassi di `d` (compresi gli archi
+`A`) usata da SVG.
+
+**Come si è tradotto, e dove stanno le trappole:**
+
+- **`<polygon>` non esiste nei vector drawable Android.** Solo `<path>`. La
+  forma a nastro (un `<polygon points="…">` nell'SVG) è stata riscritta come
+  `pathData="M… L… L… … Z"` — stessi punti, stessa forma, sintassi diversa.
+- **L'icona adattiva è due livelli, non uno.** `ic_launcher_background.xml`
+  ha solo la sagoma crema; `ic_launcher_foreground.xml` ha il resto, sfondo
+  trasparente. È il sistema a comporli e poi ritagliarli con la propria
+  maschera (cerchio, squircle, goccia…) a seconda del launcher — per questo
+  lo sfondo va tenuto separato dal musetto, non fuso in un'unica immagine.
+- **L'ordine di disegno dentro il foreground conta.** I due anelli scuri
+  degli occhi sono ciascuno un `<path>` con **due sottopercorsi** nello stesso
+  `d` (cerchio esterno + cerchio interno, versi opposti): è quello che scava
+  il buco al centro dell'anello. Il riflesso bianco sta in un `<path>`
+  separato, disegnato **prima** — attraverso il buco dell'anello si vede lui,
+  non lo sfondo. Se l'ordine si invertisse, l'anello coprirebbe il riflesso e
+  l'occhio perderebbe la lucentezza.
+- **Il viewport resta 192×192**, lo stesso dell'SVG originale, invece di
+  essere riscalato a 108. Così i numeri dei path si copiano senza
+  ricalcolare nulla a mano — `android:width/height="108dp"` fa comunque lo
+  scaling giusto in fase di render.
+- **Il livello `monochrome`** (icona a tinta unica di Android 13+, quando
+  l'utente sceglie icone abbinate al wallpaper) riusa lo stesso
+  `ic_launcher_foreground` — è la stessa scelta già presente nel template di
+  base di Android Studio: il sistema legge solo il canale alfa e ci applica
+  il proprio colore, quindi riusare il livello a colori è corretto e non
+  richiede un disegno separato.
+- **I fallback raster** (`mipmap-*dpi/ic_launcher(_round).webp`, 48–192px)
+  sono stati rigenerati dallo stesso SVG con `cairosvg` + Pillow, uno per
+  densità. Con `minSdk 26` — la stessa versione che ha introdotto le icone
+  adattive — nessun dispositivo supportato dall'app le userà mai davvero a
+  runtime; restano lì per la manciata di strumenti (anteprime IDE, alcune
+  schermate di sistema) che ancora guardano al raster invece che al vettore.
+
+*Da ricordare:* un SVG pensato come icona standalone (qui: viewBox 192×192,
+sfondo pieno + contenuto quasi a bordo canvas) va quasi sempre spezzato in due
+prima di diventare un'icona adattiva — il taglio sfondo/primo piano non è nel
+file sorgente, va deciso leggendo cosa nell'immagine "è" lo sfondo.
+
 ---
 
 ### Trappole del progetto da tenere a mente
