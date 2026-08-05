@@ -327,13 +327,20 @@ fun TrackCard(
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         Text(
-                            // "In attesa" al posto di uno 0% che sembrerebbe un
-                            // download partito e piantato. A metà il numero
-                            // torna, perché lì dice qualcosa di vero.
-                            if (scaricamento.inAttesa && scaricamento.frazione <= 0f) "In attesa"
-                            else "${(scaricamento.frazione * 100).toInt()}%",
+                            // Il numero da solo non basta a distinguere i tre
+                            // stati: una traccia in coda e una ferma a metà
+                            // mostravano entrambe la stessa percentuale grigia,
+                            // e non c'era modo di sapere se stava per ripartire
+                            // da sola o se aspettava un tocco. Solo mentre
+                            // scarica il numero parla da sé.
+                            when (scaricamento.fase) {
+                                FaseDownload.CORSO -> "${(scaricamento.frazione * 100).toInt()}%"
+                                FaseDownload.ATTESA -> percentualeCon("In coda", scaricamento.frazione)
+                                FaseDownload.PAUSA -> percentualeCon("In pausa", scaricamento.frazione)
+                            },
                             color = tinta,
-                            fontSize = 11.sp
+                            fontSize = 11.sp,
+                            maxLines = 1
                         )
                         // L'icona dice cosa succede se la tocchi, non in che
                         // stato sei: pausa mentre scarica o mentre aspetta il
@@ -436,6 +443,17 @@ fun TrackCard(
             )
         }
     }
+}
+
+/**
+ * "In pausa" da solo, "In pausa · 40%" se qualcosa è già stato preso.
+ *
+ * Lo zero non si scrive: "In coda · 0%" farebbe pensare a un download partito
+ * e piantato, che è l'opposto di quello che sta succedendo.
+ */
+private fun percentualeCon(stato: String, frazione: Float): String {
+    val percento = (frazione * 100).toInt()
+    return if (percento <= 0) stato else "$stato · $percento%"
 }
 
 /**

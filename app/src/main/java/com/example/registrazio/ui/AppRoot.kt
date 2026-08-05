@@ -178,9 +178,18 @@ fun AppRoot(
                     onCambiaTema = vm::cambiaTema,
                     onAggiorna = vm::aggiorna,
                     mostraAggiorna = !gate,
-                    scaricamentiAttivi = state.scaricamenti.count {
-                        it.value.fase != FaseDownload.PAUSA
-                    }
+                    // Solo quello che sta scaricando **fuori** da questa
+                    // schermata. Dentro la cartella la coda ha già il suo
+                    // contatore accanto al tasto, dove è ovvio cosa significa;
+                    // la nuvoletta serve a chi è andato altrove, che è
+                    // esattamente chi non ha modo di sapere che sta ancora
+                    // succedendo qualcosa.
+                    scaricamentiAttivi = state.scaricamenti
+                        .filterValues { it.fase != FaseDownload.PAUSA }
+                        .count { (id, _) ->
+                            val cartella = state.tracce.find { it.id == id }?.cartellaId
+                            cartella != (schermata as? Schermata.DettaglioCartella)?.cartellaId
+                        }
                 )
 
                 val padding = PaddingValues(

@@ -1928,6 +1928,18 @@ scaricando — con la percentuale ferma, perché nessuno la stava toccando. Era
 metà della confusione. Ora solo la traccia in `CORSO` è in accent; le altre
 sono spente, e il tasto in cima dice "Ferma tutte".
 
+**Ogni fase si legge in parole, non solo dal colore.** La card scrive
+`40%` mentre scarica, `In coda · 40%` mentre aspetta il turno, `In pausa · 40%`
+quando è ferma. Il numero da solo non distingueva una traccia che sarebbe
+ripartita da sola da una che aspettava un tocco: erano la stessa percentuale
+grigia. Lo zero non si scrive mai — "In coda · 0%" farebbe pensare a un
+download partito e piantato.
+
+**Dove si vede la coda:** il conteggio `+N in coda` sta accanto al tasto che le
+ha messe in fila, che è dove si guarda per sapere se sta finendo. La nuvoletta
+in topbar mostra **solo quello che scarica altrove**: dentro la cartella
+sarebbe una ripetizione, fuori è l'unico modo di accorgersene.
+
 **La fase appartiene a chi dà i comandi, non a chi riporta i byte.**
 `onProgresso` aggiorna solo il numero: `cancel()` è cooperativo e non
 interrompe una `read()` già in volo, quindi dopo una pausa arriva ancora un

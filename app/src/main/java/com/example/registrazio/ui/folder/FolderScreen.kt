@@ -94,6 +94,7 @@ fun FolderScreen(
                 }.toFloat(),
                 inCorso = bulkInCorso,
                 inPausa = bulkInPausa,
+                inCoda = tracce.count { scaricamenti[it.id]?.inAttesa == true },
                 onCambiaOrdinamento = onCambiaOrdinamento,
                 onScaricaTutte = onScaricaTutte
             )
@@ -133,15 +134,34 @@ private fun SortBar(
     parzialeInCorso: Float,
     inCorso: Boolean,
     inPausa: Boolean,
+    inCoda: Int,
     onCambiaOrdinamento: () -> Unit,
     onScaricaTutte: () -> Unit
 ) {
+    val colors = AppTheme.colors
     Row(
         Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        BulkDownloadButton(scaricate, totali, parzialeInCorso, inCorso, inPausa, onScaricaTutte)
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            BulkDownloadButton(scaricate, totali, parzialeInCorso, inCorso, inPausa, onScaricaTutte)
+            // Quante aspettano il turno, accanto al tasto che le ha messe in
+            // fila: è lì che si guarda per sapere se la coda sta finendo. In
+            // topbar la stessa informazione c'è solo quando si è altrove, dove
+            // questo tasto non si vede.
+            if (inCoda > 0) {
+                Text(
+                    "+$inCoda in coda",
+                    color = colors.textMuted,
+                    fontSize = 11.sp,
+                    maxLines = 1
+                )
+            }
+        }
         SortToggle(ordinamento, onCambiaOrdinamento)
     }
 }
