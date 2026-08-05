@@ -945,6 +945,27 @@ ragione questa parte.
 
 ---
 
+### Rami e push
+
+Il lavoro vive su **`feature/app-implementation`**. È lì che si committa e lì
+che si pusha, sempre.
+
+**`main` è la rete di sicurezza, non un ramo di lavoro.** Ci si arriva solo con
+una pull request aperta e accettata a mano, quando un blocco è finito *e
+provato sul telefono*. Nessun push diretto, nessun merge fatto per abitudine a
+fine giro: se il ramo di lavoro si rompe, `main` deve essere ancora il punto
+buono a cui tornare — e non lo è se lo abbiamo tenuto allineato per comodità.
+
+Il punto sicuro attuale è `ae64f5f`, l'app che gira sul telefono con l'icona
+vera. Da qui in avanti i due rami divergono apposta.
+
+*Perché sta scritto qui:* niente in questo documento ha mai chiesto di pushare
+su `main` a ogni giro. È successo che le PR #1 e #2 sono state accettate su
+`main` e i due rami sono finiti sullo stesso commit — normale come flusso, ma
+per la fase che comincia adesso (Firestore) non va bene.
+
+---
+
 ### Memoria delle versioni
 
 Fonte di verità: `gradle/libs.versions.toml`
