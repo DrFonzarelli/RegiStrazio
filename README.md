@@ -1593,14 +1593,25 @@ prototipo. Lo schema M3 è tenuto al minimo apposta.
 **Le icone sono path SVG del prototipo** interpretati da `PathParser` in
 `Icons.kt`, non risorse vettoriali Android. Per aggiungerne una si copia la path
 dall'HTML, non si importa un file. **L'unica eccezione è il logo**
-(`res/drawable/ic_logo.xml`): è a tre colori, non si tinge col tema, e i vector
-drawable lo reggono meglio di `Icons.kt`, che è fatto per glifi monocromi.
+(`res/drawable/ic_logo.xml`, da `Logo_NoBackground.svg`): si tinge come le
+altre, ma il suo viewBox non è quadrato — 136,87 × 104,32 — e `AppIconSpec`
+di viewBox ne tiene uno solo, dando per scontato che le icone siano quadrate.
+Vero per i glifi del prototipo, non per un marchio più largo che alto.
 
 **La prima casella della topbar non è mai vuota.** Dentro una cartella ospita
 la freccia indietro, in Home e nel Gate il logo — sempre 40dp, così il titolo
 parte dalla stessa ascissa e la barra non si "rimonta" cambiando schermata. Chi
 aggiunge una schermata non deve nascondere la casella: deve decidere cosa ci
 mette dentro.
+
+**Il logo in topbar è tinto, non a colori.** Prende `textSecondary`, lo stesso
+`tint` della freccia che sostituisce: nello stesso punto della barra due
+disegni di peso diverso si notano passando da una schermata all'altra, ed è
+il salto che quella casella esiste per evitare. In più segue il tema scuro da
+sé, senza una seconda versione del file da tenere allineata. Il logo **a
+colori** resta quello dell'icona dell'app (`Logo_RegiStrazio.svg` →
+`ic_launcher_*`): sono due file diversi e vanno tenuti tali, uno ha lo sfondo
+crema e l'altro no.
 
 **Cose che il prototipo fa e che Compose non ha già pronte** — sono già
 risolte, non riprogettarle:
@@ -1647,6 +1658,8 @@ Cose consapevolmente lasciate indietro, da affrontare quando conviene:
 ## Riferimenti
 
 - Prototipo UI: `prova-app-v3-integrata.html` (spec grafica 1:1)
+- Logo a colori (icona dell'app): `Logo_RegiStrazio.svg`
+- Logo monocromo (topbar): `Logo_NoBackground.svg`
 - Repository: `https://github.com/DrFonzarelli/RegiStrazio`
 - Firebase Console: `https://console.firebase.google.com`
 - MEGA API (community docs): `https://mega.py.readthedocs.io/en/latest/api.html`

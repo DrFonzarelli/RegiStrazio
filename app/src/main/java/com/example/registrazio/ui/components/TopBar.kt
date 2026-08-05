@@ -24,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -95,12 +96,18 @@ fun AppTopBar(
             )
         } else {
             // Stessa casella da 40dp di AppIconButton, così il titolo parte
-            // dalla stessa ascissa con o senza freccia.
+            // dalla stessa ascissa con o senza freccia. E stesso `tint` della
+            // freccia: nello stesso punto della barra due disegni di peso
+            // diverso si notano passando da una schermata all'altra, ed è
+            // proprio il salto che questa casella esiste per evitare. Tinto
+            // invece che a colori propri, il logo segue anche il tema scuro
+            // senza una seconda versione da tenere allineata.
             Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) {
                 Image(
                     painter = painterResource(R.drawable.ic_logo),
                     contentDescription = null,
-                    modifier = Modifier.size(28.dp)
+                    colorFilter = ColorFilter.tint(colors.textSecondary),
+                    modifier = Modifier.size(width = 26.dp, height = 20.dp)
                 )
             }
         }
