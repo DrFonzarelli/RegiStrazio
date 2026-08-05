@@ -1730,6 +1730,74 @@ altro su quello accanto.
 
 ---
 
+#### 29. Un `isPlaying` a false non vuol dire "in pausa"
+
+Il tasto play restava a girare su tracce che stavano suonando — soprattutto
+saltando da un commento all'altro, e in modo così frequente sulle tracce
+scaricate da far sembrare che l'app ignorasse il file locale e ricaricasse da
+MEGA. Tre sintomi, un difetto solo.
+
+`audioAttivo` lo scriveva **solo** il ciclo di `seguiPosizione`. Se quel ciclo
+moriva mentre lo stato diceva "in riproduzione", il valore restava congelato a
+`false` per sempre: cursore fermo, tasto che gira, audio che va avanti per
+conto suo.
+
+A ucciderlo era `allineaAlPlayer`, e la sequenza merita di essere letta tutta,
+perché nessuno dei passaggi è sbagliato da solo:
+
+1. Salti a un commento. `riproduciDa` legge lo stato — `inRiproduzione = true`
+   — e chiama `player.cerca()`.
+2. ExoPlayer, durante il `seek`, emette `isPlaying = false`.
+3. `allineaAlPlayer(false)` lo legge come una pausa: **spegne il ciclo** e
+   scrive `inRiproduzione = false`.
+4. `riproduciDa` prosegue e riscrive `inRiproduzione = true`, dalla copia di
+   stato letta al passo 1 — che nel frattempo è invecchiata.
+5. Il `seek` finisce, l'audio riparte, arriva `isPlaying = true`.
+6. `allineaAlPlayer(true)` trova `inRiproduzione` **già** a `true`, conclude di
+   non avere niente da fare (`if (r.inRiproduzione == suona) return`) e non
+   riaccende il ciclo.
+
+Fine: lo stato dice tutto a posto, il ciclo è morto, `audioAttivo` non si
+muove più.
+
+*Fix, tre parti:*
+
+1. `audioAttivo` viene da `allineaAlPlayer`, che è l'unico posto che sa se il
+   suono esce. `seguiPosizione` lo conferma a ogni tick, non lo stabilisce.
+2. Distinguere la pausa vera dalla pausa tecnica con **`playWhenReady`**: se il
+   player *vuole* suonare ma non suona, sta caricando o finendo un `seek`, e il
+   ciclo va lasciato acceso. Il tasto che gira, lì, è la verità.
+3. Riaccendere il ciclo guardando **`playJob?.isActive`**, non lo stato. Sono
+   due cose diverse e quando divergono è proprio nei casi che rompono.
+
+*Da ricordare:* leggere lo stato in cima a una funzione e riscriverlo in fondo
+è sicuro solo se in mezzo non può succedere niente. Qui in mezzo c'era una
+chiamata al player, cioè una callback sincrona che quello stesso stato lo
+cambiava. E una funzione che decide "è già a posto, non faccio niente"
+confrontando un valore che qualcun altro ha appena corretto per un motivo
+diverso è il modo più silenzioso per non fare la cosa che serviva.
+
+---
+
+#### 30. Due strade per lo stesso download
+
+Scaricando una traccia a mano e premendo poi "Scarica tutte", quella traccia
+partiva **due volte**: due percentuali sulla stessa barra, entrambe che
+scrivevano sullo stesso file `.parziale`.
+
+`avviaDownload` la guardia ce l'ha — `if (jobDownload[id]?.isActive == true)
+return` — ma la coda non ci passava: chiamava `scaricaUna` direttamente, senza
+consultare `jobDownload` né lasciarci il proprio job.
+
+*Fix:* la coda salta le tracce che hanno già un download vivo. Restano quelle
+in pausa, che è giusto riprendere.
+
+*Da ricordare:* una guardia contro il doppio avvio vale solo per chi passa
+dalla porta dov'è appesa. Quando due strade portano alla stessa operazione, o
+la guardia sta nell'operazione, o va ripetuta su tutte le strade.
+
+---
+
 ### Trappole del progetto da tenere a mente
 
 **`google-services.json` non è nel repository, ed è voluto.** Sta solo in

@@ -466,6 +466,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private fun riprendi(tracciaId: String) {
         player.riprendi()
         _state.update { it.copy(riproduzione = it.riproduzione.copy(inRiproduzione = true)) }
+        // Cancellare prima di rilanciare: senza, un ciclo lasciato indietro
+        // continuerebbe a scrivere la stessa posizione insieme al nuovo.
+        playJob?.cancel()
         playJob = viewModelScope.launch { seguiPosizione(tracciaId) }
     }
 
@@ -494,11 +497,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
         val punto = secondi.coerceAtLeast(0f)
         player.cerca(punto)
-        // Se era in pausa il seek non basta: va ripreso, e con lui il ciclo
-        // che riporta la posizione nello stato.
-        if (!r.inRiproduzione) {
-            player.riprendi()
-            playJob?.cancel()
+        // Se era in pausa il seek non basta: va ripreso.
+        if (!r.inRiproduzione) player.riprendi()
+        // Il ciclo si riaccende guardando il job, non lo stato: sono due cose
+        // diverse, e quando divergono è proprio nei casi che rompono.
+        if (playJob?.isActive != true) {
             playJob = viewModelScope.launch { seguiPosizione(tracciaId) }
         }
         _state.update {
@@ -717,30 +720,61 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * Il player è partito o si è fermato senza che l'abbiamo chiesto noi.
+     * Il player ha cominciato o smesso di suonare, per qualunque motivo.
      *
-     * Non comanda niente: si limita a far dire all'interfaccia la verità. Se lo
-     * stato è già allineato non fa nulla — quello è il caso normale, cioè un
-     * comando partito da qui.
+     * È l'unico posto che sa davvero se il suono sta uscendo, quindi è da qui
+     * che [StatoRiproduzione.audioAttivo] prende il valore: il ciclo di
+     * [seguiPosizione] lo conferma a ogni tick, non lo stabilisce.
+     *
+     * **Un `isPlaying` a false non è per forza una pausa.** Lo è anche durante
+     * un caricamento e nel mezzo di un `seek`, e le due cose vogliono reazioni
+     * opposte — a una pausa il ciclo si spegne, a un caricamento no, perché fra
+     * un istante l'audio riparte. `vuoleSuonare` è quello che le distingue.
+     *
+     * Prima la funzione usciva subito se `inRiproduzione` era già allineato, e
+     * lì stava il difetto: saltando a un commento, il `seek` faceva passare il
+     * player per "fermo" per un attimo e questa spegneva il ciclo; poi
+     * `riproduciDa` riscriveva `inRiproduzione = true` dallo stato che aveva
+     * letto **prima**. Alla ripartenza vera lo stato risultava già a posto e si
+     * usciva senza riaccendere niente: il ciclo restava morto, `audioAttivo`
+     * congelato a false, e il tasto girava all'infinito su una traccia che
+     * stava suonando.
      */
     private fun allineaAlPlayer(suona: Boolean) {
         val r = _state.value.riproduzione
-        if (r.inRiproduzione == suona) return
         val id = r.tracciaId ?: return
 
-        if (suona) {
-            _state.update { it.copy(riproduzione = it.riproduzione.copy(inRiproduzione = true)) }
-            playJob?.cancel()
-            playJob = viewModelScope.launch { seguiPosizione(id) }
-        } else {
+        // Dopo un ferma() il player non suona più ma resta "vorrebbe": senza
+        // questa uscita il ciclo appena spento ripartirebbe da solo.
+        if (!suona && !r.inRiproduzione) {
+            _state.update { it.copy(riproduzione = it.riproduzione.copy(audioAttivo = false)) }
+            return
+        }
+
+        val inPausaVera = !suona && !player.vuoleSuonare
+
+        _state.update { s ->
+            s.copy(
+                riproduzione = s.riproduzione.copy(
+                    audioAttivo = suona,
+                    inRiproduzione = !inPausaVera
+                )
+            )
+        }
+
+        if (inPausaVera) {
             playJob?.cancel()
             playJob = null
-            _state.update {
-                it.copy(
-                    riproduzione = it.riproduzione.copy(inRiproduzione = false, audioAttivo = false)
-                )
-            }
             salvaTracciaSuDisco(id)
+            return
+        }
+
+        // Si suona, o si sta per: il ciclo che riporta la posizione dev'essere
+        // vivo. Può non esserlo — un seek che ha attraversato una pausa
+        // tecnica, o un play arrivato dalla notifica — e da fuori un ciclo
+        // morto si vede come un cursore fermo su un audio che va avanti.
+        if (playJob?.isActive != true) {
+            playJob = viewModelScope.launch { seguiPosizione(id) }
         }
     }
 
@@ -1094,6 +1128,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             for (id in ids) {
                 val t = traccia(id) ?: continue
                 if (t.scaricata) { codaBulk = codaBulk - id; continue }
+                // Sta già scaricando perché qualcuno l'ha avviata a mano: la
+                // coda non la raddoppia. `avviaDownload` si difende guardando
+                // `jobDownload`, ma qui si chiamava `scaricaUna` dritta, senza
+                // passare da lì né lasciare traccia — due discese sullo stesso
+                // file, sullo stesso `.parziale`, e due percentuali che si
+                // contendono la stessa barra.
+                if (jobDownload[id]?.isActive == true) { codaBulk = codaBulk - id; continue }
                 tentate++
                 val errore = scaricaUna(t)
                 // Senza linea le altre falliranno tutte allo stesso modo: meglio

@@ -164,6 +164,18 @@ class PlayerMega(context: Context) {
         get() = player.isPlaying
 
     /**
+     * Play è premuto, indipendentemente dal fatto che il suono stia uscendo.
+     *
+     * Serve a leggere un `isPlaying` a `false` per quello che è. Vale sia
+     * quando si è in pausa sia quando si sta caricando o finendo un `seek`, e
+     * le due cose vogliono reazioni opposte: alla prima si spegne il ciclo di
+     * aggiornamento, alla seconda va lasciato acceso perché fra un istante
+     * l'audio riparte. Solo `playWhenReady` le distingue.
+     */
+    val vuoleSuonare: Boolean
+        get() = player.playWhenReady
+
+    /**
      * Non rilascia niente.
      *
      * Il player non è suo: è di [PlayerCondiviso], e il servizio della notifica
