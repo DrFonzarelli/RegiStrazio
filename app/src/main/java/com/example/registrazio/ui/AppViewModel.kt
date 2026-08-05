@@ -4,8 +4,9 @@ import android.app.Application
 import androidx.annotation.OptIn
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.registrazio.data.DemoData
+import com.example.registrazio.data.DatiDiProva
 import com.example.registrazio.data.local.ArchivioLocale
+import com.example.registrazio.data.local.DatiDiProvaStore
 import com.example.registrazio.data.local.ProfiliStore
 import com.example.registrazio.data.local.db.ConteggioPendenti
 import com.example.registrazio.data.remote.EsitoElenco
@@ -183,6 +184,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     private val identityManager = IdentityManager(app)
     private val profiliStore = ProfiliStore(app)
+    private val datiDiProva = DatiDiProvaStore(app)
     private val archivio = ArchivioLocale(app)
     private val megaApi = MegaApi()
     private val scaricatore = ScaricatoreMega(megaApi)
@@ -278,8 +280,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             it.copy(
                 identita = identita,
                 schermata = if (identita != null) Schermata.Home else Schermata.Gate,
-                cartelle = DemoData.cartelle,
-                tracce = DemoData.tracce,
                 profiliDisponibili = profiliStore.profili()
             )
         }
@@ -293,12 +293,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             fileLocali.putAll(archivio.download())
             val conteggio = archivio.pendenti()
             _state.update {
-                it.copy(
-                    cartelle = DemoData.cartelle + cartelle,
-                    tracce = DemoData.tracce + tracce,
-                    pendenti = conteggio
-                )
+                it.copy(cartelle = cartelle, tracce = tracce, pendenti = conteggio)
             }
+            // Dopo l'archivio, mai prima: il seme deve poter vedere cosa c'è
+            // già, o riscriverebbe sopra il lavoro fatto sulle stesse cartelle.
+            seminaDatiDiProva()
         }
     }
 
@@ -1123,64 +1122,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     return@launch
                 }
 
-                val ripiego = Cartella.suggestName(linkMega.folderId)
-                val nomePrecedente = _state.value.cartelle
-                    .find { it.megaFolderId == linkMega.folderId }?.nome
-
-                val cartella = Cartella(
-                    id = linkMega.folderId,
-                    // Un nome scelto a mano vince su quello di MEGA: se l'hai
-                    // rinominata, ricaricarla non deve disfare la tua scelta.
-                    // Il ripiego "Cartella A6kViD" invece si lascia sostituire.
-                    nome = nomePrecedente?.takeIf { it.isNotBlank() && it != ripiego }
-                        ?: risultato.nomeCartella?.takeIf { it.isNotBlank() }
-                        ?: ripiego,
-                    linkMega = link.trim(),
-                    megaFolderId = linkMega.folderId,
-                    aggiuntoDa = _state.value.identita?.appUid.orEmpty(),
-                    numTracce = file.size
+                val (cartella, nuoveTracce) = costruisciDaMega(
+                    link = link,
+                    linkMega = linkMega,
+                    risultato = risultato,
+                    aggiuntoDa = _state.value.identita?.appUid.orEmpty()
                 )
-                // Le chiavi arrivano solo con l'elenco dei file: vanno tenute
-                // ora, o al play non si potrebbe decifrare niente.
-                file.forEach { chiaviFile[it.handle] = it.chiave }
-
-                // Le tracce già presenti, per handle: l'id di una traccia è il
-                // node handle di MEGA e non cambia mai, quindi si riconoscono.
-                val esistenti = _state.value.tracce
-                    .filter { it.cartellaId == cartella.id }
-                    .associateBy { it.id }
-
-                val nuoveTracce = file.sortedWith(compareBy(OrdineNaturale) { it.nome }).map { f ->
-                    // Il nome su MEGA include l'estensione: nell'elenco è rumore.
-                    val titoloDaMega = f.nome.substringBeforeLast('.', f.nome)
-                    val precedente = esistenti[f.handle]
-
-                    if (precedente == null) {
-                        Traccia(
-                            id = f.handle,
-                            cartellaId = cartella.id,
-                            titolo = titoloDaMega,
-                            idFileMega = f.handle,
-                            // 0 = ancora ignota. La durata sta dentro il file audio,
-                            // che a questo punto non abbiamo ancora aperto.
-                            durataSecondi = 0
-                        )
-                    } else {
-                        // Ricaricare la cartella rilegge MEGA, e MEGA sa solo come
-                        // si chiama il file e quanto pesa. Stelline, rinomine,
-                        // durata, ascolti e commenti sono roba nostra: ripartire da
-                        // zero vorrebbe dire cancellare il lavoro di chi usa l'app.
-                        precedente.copy(
-                            // Un titolo scelto a mano vince su quello del file. Se
-                            // invece non era mai stato toccato, si aggiorna: il file
-                            // potrebbe essere stato rinominato su MEGA.
-                            titolo = if (precedente.titolo == titoloDaMega) titoloDaMega
-                            else precedente.titolo,
-                            cartellaId = cartella.id,
-                            idFileMega = f.handle
-                        )
-                    }
-                }
 
                 _state.update { stato ->
                     val cartelle =
@@ -1221,6 +1168,166 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
         }
+    }
+
+    /**
+     * Da un elenco MEGA alla cartella e alle tracce, senza toccare lo stato.
+     *
+     * Sta fuori da [collegaCartella] perché serve due volte: quando colleghi un
+     * link a mano, e quando all'avvio si seminano le cartelle di prova. È il
+     * pezzo che sa fondere quello che dice MEGA con quello che sappiamo già —
+     * l'unico che non va scritto due volte, o le due strade divergerebbero al
+     * primo ritocco.
+     *
+     * Effetto collaterale voluto: registra le chiavi in [chiaviFile]. Arrivano
+     * solo con l'elenco, e senza non si potrebbe decifrare niente al play.
+     */
+    private fun costruisciDaMega(
+        link: String,
+        linkMega: LinkMega,
+        risultato: EsitoElenco,
+        aggiuntoDa: String
+    ): Pair<Cartella, List<Traccia>> {
+        val file = risultato.audio
+        val ripiego = Cartella.suggestName(linkMega.folderId)
+        val nomePrecedente = _state.value.cartelle
+            .find { it.megaFolderId == linkMega.folderId }?.nome
+
+        val cartella = Cartella(
+            id = linkMega.folderId,
+            // Un nome scelto a mano vince su quello di MEGA: se l'hai
+            // rinominata, ricaricarla non deve disfare la tua scelta.
+            // Il ripiego "Cartella A6kViD" invece si lascia sostituire.
+            nome = nomePrecedente?.takeIf { it.isNotBlank() && it != ripiego }
+                ?: risultato.nomeCartella?.takeIf { it.isNotBlank() }
+                ?: ripiego,
+            linkMega = link.trim(),
+            megaFolderId = linkMega.folderId,
+            aggiuntoDa = aggiuntoDa,
+            numTracce = file.size
+        )
+        file.forEach { chiaviFile[it.handle] = it.chiave }
+
+        // Le tracce già presenti, per handle: l'id di una traccia è il node
+        // handle di MEGA e non cambia mai, quindi si riconoscono.
+        val esistenti = _state.value.tracce
+            .filter { it.cartellaId == cartella.id }
+            .associateBy { it.id }
+
+        val tracce = file.sortedWith(compareBy(OrdineNaturale) { it.nome }).map { f ->
+            // Il nome su MEGA include l'estensione: nell'elenco è rumore.
+            val titoloDaMega = f.nome.substringBeforeLast('.', f.nome)
+            val precedente = esistenti[f.handle]
+
+            if (precedente == null) {
+                Traccia(
+                    id = f.handle,
+                    cartellaId = cartella.id,
+                    titolo = titoloDaMega,
+                    idFileMega = f.handle,
+                    // 0 = ancora ignota. La durata sta dentro il file audio,
+                    // che a questo punto non abbiamo ancora aperto.
+                    durataSecondi = 0
+                )
+            } else {
+                // Ricaricare la cartella rilegge MEGA, e MEGA sa solo come si
+                // chiama il file e quanto pesa. Stelline, rinomine, durata,
+                // ascolti e commenti sono roba nostra: ripartire da zero
+                // vorrebbe dire cancellare il lavoro di chi usa l'app.
+                precedente.copy(
+                    // Un titolo scelto a mano vince su quello del file. Se
+                    // invece non era mai stato toccato, si aggiorna: il file
+                    // potrebbe essere stato rinominato su MEGA.
+                    titolo = if (precedente.titolo == titoloDaMega) titoloDaMega
+                    else precedente.titolo,
+                    cartellaId = cartella.id,
+                    idFileMega = f.handle
+                )
+            }
+        }
+
+        return cartella to tracce
+    }
+
+    /**
+     * Collega le cartelle di prova e ci mette sopra commenti e voti finti.
+     *
+     * Succede una volta per installazione. Il segno che è successo sta fuori
+     * dall'archivio ([DatiDiProvaStore]) apposta: se stesse nelle cartelle,
+     * scollegarne una la farebbe tornare al riavvio dopo, e non si potrebbe più
+     * provare lo scollegamento.
+     *
+     * Senza linea non semina niente **e non segna niente**: ci si riprova al
+     * prossimo avvio. Un banco di prova nato a metà è peggio di uno che nasce
+     * al secondo tentativo — in mezzo ci sarebbero cartelle senza tracce, che
+     * somigliano troppo a un bug per essere utili.
+     */
+    private suspend fun seminaDatiDiProva() {
+        if (datiDiProva.giaSeminati()) return
+
+        for (prova in DatiDiProva.cartelle) {
+            val linkMega = LinkMega.parse(prova.linkMega) ?: continue
+            val risultato = runCatching { megaApi.elencaFileAudio(linkMega) }.getOrNull()
+            if (risultato == null || risultato.audio.isEmpty()) return
+
+            val (cartella, tracce) = costruisciDaMega(
+                link = prova.linkMega,
+                linkMega = linkMega,
+                risultato = risultato,
+                // Le cartelle di prova arrivano da qualcun altro: è il punto di
+                // partenza che si vuole simulare, "il gruppo ha già lavorato".
+                aggiuntoDa = DatiDiProva.Autore.MARCO.appUid
+            )
+
+            val commenti = prova.commenti.mapIndexedNotNull { i, finto ->
+                // La posizione è 1-based e può puntare oltre l'ultimo file:
+                // quante tracce ci siano davvero lo dice MEGA, non questo file.
+                val traccia = tracce.getOrNull(finto.traccia - 1) ?: return@mapIndexedNotNull null
+                Commento(
+                    // Deterministico: riseminando non si duplica niente.
+                    id = "prova-${cartella.id}-$i",
+                    tracciaId = traccia.id,
+                    appUid = finto.autore.appUid,
+                    autoreNome = finto.autore.nomeVisibile,
+                    autoreColore = finto.autore.colore,
+                    timestampSecondi = finto.secondi.toFloat(),
+                    testo = finto.testo,
+                    statoSync = StatoSync.SINCRONIZZATO
+                )
+            }
+            val commentiPerTraccia = commenti.groupBy { it.tracciaId }
+
+            val arredate = tracce.mapIndexed { indice, traccia ->
+                val voto = prova.voti.find { it.traccia == indice + 1 }
+                traccia.copy(
+                    mioVoto = voto?.mio ?: traccia.mioVoto,
+                    votiPieni = voto?.pieni ?: traccia.votiPieni,
+                    votiMezzi = voto?.mezzi ?: traccia.votiMezzi,
+                    ascolti = voto?.ascolti ?: traccia.ascolti,
+                    playBuckets = voto?.let { DatiDiProva.buckets(it.ascolti) }
+                        ?: traccia.playBuckets,
+                    commenti = commentiPerTraccia[traccia.id].orEmpty()
+                )
+            }
+
+            _state.update { stato ->
+                stato.copy(
+                    cartelle = stato.cartelle.filterNot { it.id == cartella.id } + cartella,
+                    tracce = stato.tracce.filterNot { it.cartellaId == cartella.id } + arredate
+                )
+            }
+            // SINCRONIZZATO, non LOCALE: nulla di finto deve finire nel badge
+            // del tasto Sincronizza, e tantomeno su Firestore.
+            salva {
+                archivio.salvaCartella(cartella, StatoSync.SINCRONIZZATO)
+                archivio.sostituisciTracce(
+                    cartella.id, arredate, chiaviFile, StatoSync.SINCRONIZZATO
+                )
+                commenti.forEach { archivio.salvaCommento(it) }
+            }
+        }
+
+        datiDiProva.segnaSeminati()
     }
 
     /**
@@ -1294,32 +1401,51 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         mettiInPausa()
         // Reinstallare cancella i dati dell'app: anche l'archivio locale.
         chiaviFile.clear()
-        salva { archivio.svuota() }
+        fileLocali.clear()
+        // ...comprese le cartelle di prova, che sono dati locali come gli altri.
+        datiDiProva.dimentica()
         _state.update {
             it.copy(
                 identita = null,
                 schermata = Schermata.Gate,
-                cartelle = DemoData.cartelle,
-                tracce = DemoData.tracce
+                cartelle = emptyList(),
+                tracce = emptyList()
             )
         }
-        mostra("Dispositivo reimpostato — recupera il tuo account per ritrovare le cartelle.")
+        riparti("Dispositivo reimpostato — ricollego le cartelle di prova.")
     }
 
+    /**
+     * "Riparti dai dati di prova": butta tutto quello che hai fatto tu e
+     * ricostruisce il banco di prova.
+     *
+     * Non c'è nessun elenco di "cose mie" da tenere separate dalle "cose del
+     * seme", ed è il punto: il seme si ricostruisce da codice, quindi
+     * cancellare tutto e riseminare dà lo stesso risultato di una cancellazione
+     * selettiva, senza uno stato in più da tenere allineato.
+     */
     fun svuotaCloudSimulato() {
         profiliStore.svuota()
         identityManager.dimentica()
         mettiInPausa()
         chiaviFile.clear()
-        salva { archivio.svuota() }
-        _state.update {
-            AppState(
-                temaScuro = it.temaScuro,
-                cartelle = DemoData.cartelle,
-                tracce = DemoData.tracce
-            )
+        fileLocali.clear()
+        // profiliStore.svuota() ha già cancellato il segno del seme: stanno
+        // nelle stesse preferenze apposta. Qui è solo per non dipendere da
+        // quel dettaglio.
+        datiDiProva.dimentica()
+        _state.update { AppState(temaScuro = it.temaScuro) }
+        riparti("Tutto azzerato — ricollego le cartelle di prova.")
+    }
+
+    /** Svuota l'archivio e rimette il banco di prova, in quest'ordine. */
+    private fun riparti(messaggio: String) {
+        mostra(messaggio)
+        viewModelScope.launch {
+            archivio.svuota()
+            seminaDatiDiProva()
+            _state.update { it.copy(pendenti = archivio.pendenti()) }
         }
-        mostra("Cloud simulato svuotato completamente.")
     }
 
     // ---------- lettura ----------

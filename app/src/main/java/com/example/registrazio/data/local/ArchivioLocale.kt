@@ -104,10 +104,11 @@ class ArchivioLocale(context: Context) {
     suspend fun sostituisciTracce(
         cartellaId: String,
         tracce: List<Traccia>,
-        chiavi: Map<String, MegaCrypto.ChiaveFile>
+        chiavi: Map<String, MegaCrypto.ChiaveFile>,
+        stato: StatoSync = StatoSync.LOCALE
     ) {
         dao.cancellaTracceDi(cartellaId)
-        dao.salvaTracce(tracce.map { it.aEntita(chiavi[it.id]) })
+        dao.salvaTracce(tracce.map { it.aEntita(chiavi[it.id], stato) })
     }
 
     suspend fun salvaTraccia(traccia: Traccia, chiave: MegaCrypto.ChiaveFile?) {
@@ -188,7 +189,10 @@ private fun TracciaEntity.aModello(commenti: List<Commento>) = Traccia(
     creatoIl = creatoIl
 )
 
-private fun Traccia.aEntita(chiave: MegaCrypto.ChiaveFile?) = TracciaEntity(
+private fun Traccia.aEntita(
+    chiave: MegaCrypto.ChiaveFile?,
+    stato: StatoSync = StatoSync.LOCALE
+) = TracciaEntity(
     id = id,
     cartellaId = cartellaId,
     titolo = titolo,
@@ -206,7 +210,7 @@ private fun Traccia.aEntita(chiave: MegaCrypto.ChiaveFile?) = TracciaEntity(
     chiaveAes = chiave?.aes,
     nonce = chiave?.nonce,
     // I commenti hanno una tabella loro: non fanno parte della riga traccia.
-    statoSync = StatoSync.LOCALE
+    statoSync = stato
 )
 
 private fun CommentoEntity.aModello() = Commento(

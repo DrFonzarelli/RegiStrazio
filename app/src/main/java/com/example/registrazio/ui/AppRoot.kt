@@ -37,7 +37,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.registrazio.data.DemoData
 import com.example.registrazio.data.model.Commento
 import com.example.registrazio.data.model.Traccia
 import com.example.registrazio.ui.account.AccountSheet
@@ -57,9 +56,6 @@ import com.example.registrazio.ui.theme.MainPadding
 import com.example.registrazio.ui.theme.RegiStrazioTheme
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-
-/** Le cartelle demo non si rinominano né si scollegano: non sono state collegate da nessuno. */
-private val ID_DEMO = DemoData.cartelle.map { it.id }.toSet()
 
 @Composable
 fun AppRoot(
@@ -206,8 +202,9 @@ fun AppRoot(
                         is Schermata.Home -> HomeScreen(
                             cartelle = state.cartelle,
                             conteggioTracce = { id -> state.tracce.count { it.cartellaId == id } },
-                            cartelleRinominabili = state.cartelle
-                                .map { it.id }.filterNot { it in ID_DEMO }.toSet(),
+                            // Ora sono tutte cartelle vere, comprese quelle di
+                            // prova: si rinominano e si scollegano tutte.
+                            cartelleRinominabili = state.cartelle.map { it.id }.toSet(),
                             collegamento = state.collegamento,
                             onApriCartella = vm::apriCartella,
                             onRinomina = vm::rinominaCartella,
@@ -363,7 +360,7 @@ fun AppRoot(
             state.identita?.let { io ->
                 AccountSheet(
                     utente = io,
-                    cartelleCollegate = state.cartelle.filterNot { it.id in ID_DEMO },
+                    cartelleCollegate = state.cartelle,
                     onChiudi = { accountAperto = false },
                     onRimuoviCartella = vm::rimuoviCartella,
                     onSimulaReinstallazione = {

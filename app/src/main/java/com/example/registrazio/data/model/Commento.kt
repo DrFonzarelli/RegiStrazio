@@ -32,6 +32,13 @@ data class Commento(
     val iniziale: String
         get() = autoreNome.trim().take(1).uppercase()
 
+    /**
+     * Aspetta ancora di arrivare su Firestore.
+     *
+     * [StatoSync.SINCRONIZZATO] conta come "già arrivato" quanto il `null`: la
+     * differenza fra i due è solo da dove viene il commento — appena riletto da
+     * Room porta uno stato esplicito, appena costruito in memoria no.
+     */
     val isPending: Boolean
-        get() = statoSync != null
+        get() = statoSync != null && statoSync != StatoSync.SINCRONIZZATO
 }

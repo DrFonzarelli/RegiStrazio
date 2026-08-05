@@ -1023,7 +1023,7 @@ perché la BOM non le mostra): Firestore `26.5.0`, Auth `24.2.0`.
 | Foglio account + strumenti di test | ✅ | |
 | Identità persistente (`appUid`) | ✅ | `EncryptedSharedPreferences` con fallback |
 | Riproduzione audio da MEGA | ✅ | **provata**: audio, seek dai commenti, pausa/riprendi |
-| Riproduzione tracce demo | 🟡 | restano sul timer finto: non hanno un file dietro |
+| Cartelle di prova pre-collegate | 🟡 | due cartelle MEGA **vere** seminate al primo avvio, con commenti e voti finti sopra: `DatiDiProva.kt` |
 | Collegamento di una cartella MEGA | ✅ | **provato su una cartella vera**; ricollegare la stessa cartella la ricarica |
 | Condivisione da MEGA verso l'app | ✅ | **provata**: da app aperta e chiusa, e due volte con lo stesso link |
 | Durata delle tracce da MEGA | 🟡 | arriva al primo play di *quella* traccia; le altre restano `--:--` |
@@ -1048,6 +1048,13 @@ davvero** e da scaricate suonano dal telefono senza rete; **i commenti non
 arrivano ancora su Firestore**, ma restano sul telefono in attesa invece di
 sparire.
 
+**Le cartelle finte non ci sono più.** Al loro posto ci sono due cartelle MEGA
+vere, collegate da sole al primo avvio, con sopra commenti e voti di un gruppo
+immaginario — vedi *Il banco di prova* qui sotto. Le vecchie tracce demo non
+avevano un file dietro e suonavano su un timer: provare l'app su quelle voleva
+dire non provare niente, e con MEGA funzionante erano diventate un modo per
+sbagliarsi.
+
 **Il bug delle tracce che sparivano alla chiusura è chiuso**, e con esso una mia
 lettura sbagliata: l'avevo trattato come qualcosa che si sarebbe risolto da sé
 con Firestore. Non era così — mancava la persistenza locale, che deve esistere
@@ -1064,6 +1071,48 @@ verificare staticamente (`MediaSessionService`, `MediaNotification.Provider`,
 incrociato con il codice esistente prima di essere spinto; questo no. Aspettarsi
 un giro di correzioni di compilazione è ragionevole — non è un fallimento, è dove
 siamo.
+
+---
+
+### Il banco di prova
+
+`data/DatiDiProva.kt` tiene due link a cartelle MEGA vere. Al primo avvio
+vengono collegate da sole, come se le avesse già collegate qualcun altro, e ci
+vengono messi sopra commenti, voti e ascolti di un gruppo immaginario (Marco,
+Luca, Ale). Serve a non ripartire da zero a ogni prova.
+
+**I commenti si agganciano per posizione, non per nome file.** L'id di una
+traccia è il node handle di MEGA, che si conosce solo dopo aver letto la
+cartella: in un file di dati non può starci. Quindi `CommentoDiProva.traccia`
+è `1` per la prima traccia dell'elenco ordinato, `2` per la seconda, e le
+posizioni che non esistono si saltano. Aggiungere o rinominare file su MEGA
+non rompe niente.
+
+**Niente di finto arriva su Firestore.** Cartelle, tracce e commenti seminati
+nascono `SINCRONIZZATO`: il contatore dei pendenti li ignora e il push non li
+guarderà. Un arredamento caricato sul database vero non se ne andrebbe più.
+
+**Il seme scatta una volta sola**, e il segno che è scattato sta in
+`DatiDiProvaStore` (SharedPreferences), non fra le cartelle. Se stesse lì,
+scollegare una cartella di prova la farebbe tornare al riavvio dopo e lo
+scollegamento non si potrebbe più provare. Senza linea non semina e non segna
+niente: si riprova al riavvio successivo.
+
+**Il reset è "cancella tutto e risemina", non "cancella il tuo".** È il tasto
+rosso del foglio account, *Riparti dai dati di prova*. Non esiste nessun elenco
+di righe "mie" contrapposte a righe "del seme", ed è il punto: il seme si
+ricostruisce da codice, quindi buttare tutto e riseminare dà lo stesso
+risultato di una cancellazione selettiva senza uno stato in più da tenere
+allineato e da sbagliare.
+
+> **I link contengono la chiave.** La parte dopo il `#` decifra la cartella:
+> chi legge il sorgente può scaricarne l'audio, e il repository è pubblico. È
+> una scelta consapevole per questa fase. Quando quelle cartelle non serviranno
+> più, **cancellarle da qui non basta**: restano nella storia dei commit, che su
+> un repo pubblico resta raggiungibile anche dopo un force-push. L'unica cosa
+> che invalida davvero la chiave è **rigenerare il link dalla cartella su
+> MEGA**. I posti da ripulire nel codice sono due, entrambi in
+> `DatiDiProva.cartelle`.
 
 ---
 
@@ -1575,6 +1624,41 @@ il taglio dipende dalla forma scelta dal launcher. Qui il musetto sta dentro
 il cerchio da 66 anche dopo lo scaling — verificato sui punti più esterni,
 l'onda e il nastro — quindi 72 è sicuro. Con un disegno che riempie di più gli
 angoli conviene scalare a `0.611` (66/108) e non a `0.6667`.
+
+---
+
+#### 26. Una durata a zero ammassa i commenti contro il bordo
+
+Seminando commenti su tracce MEGA mai riprodotte sono finiti tutti impilati
+all'estremità destra della timeline. Il ripiego che c'era —
+`durataSecondi.coerceAtLeast(1)` — nasce per non dividere per zero, e per
+quello funziona; ma con durata 1 ogni marker a 12, 68 o 125 secondi dà una
+frazione enorme, che il `coerceIn(0f, 1f)` schiaccia tutta su 1.
+
+Non è un problema del banco di prova, è l'app: **la durata si legge solo
+premendo play su quella traccia**, quindi una traccia mai avviata con sopra i
+commenti di qualcun altro sarà la norma anche in produzione. Il seme l'ha solo
+fatto emergere subito invece che al primo commento arrivato da Firestore.
+
+*Fix:* finché la durata vera non si conosce, stimarla dal commento più
+avanzato — la traccia dura almeno quanto il punto di cui qualcuno ha parlato —
+con un margine che stacchi l'ultimo marker dal bordo:
+
+```kotlin
+val durataSicura = when {
+    durataSecondi > 0 -> durataSecondi.toFloat()
+    commenti.isEmpty() -> 1f
+    else -> commenti.maxOf { it.timestampSecondi }.coerceAtLeast(1f) * 1.15f
+}
+```
+
+Al primo play la durata vera prende il posto della stima e i marker si
+assestano da soli.
+
+*Da ricordare:* un ripiego che evita il crash non è per forza un ripiego che
+dà un risultato sensato. `coerceAtLeast(1)` toglieva il NaN e lasciava una
+bugia — e una bugia in un dato che finisce in un layout si vede solo quando
+qualcuno guarda lo schermo nel caso giusto.
 
 ---
 

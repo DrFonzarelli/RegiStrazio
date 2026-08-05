@@ -104,9 +104,22 @@ fun Timeline(
                 .background(colors.borderStrong)
         )
 
-        // La durata resta 0 finché non l'abbiamo letta dal file audio: senza
-        // questa rete la divisione darebbe NaN e il layout ne uscirebbe rotto.
-        val durataSicura = durataSecondi.coerceAtLeast(1)
+        // La durata resta 0 finché non l'abbiamo letta dal file audio, e la
+        // leggiamo solo premendo play: una traccia mai avviata con sopra i
+        // commenti di qualcun altro è la norma, non un caso limite.
+        //
+        // Dividere per 0 darebbe NaN, ma il ripiego a 1 non basta: manderebbe
+        // ogni marker oltre il fondo scala, ammassandoli tutti contro il bordo
+        // destro come se i commenti fossero tutti sull'ultimo secondo. Finché
+        // la durata vera non si sa, la si stima dal commento più avanzato — la
+        // traccia dura *almeno* quanto il punto di cui qualcuno ha parlato — e
+        // un margine tiene l'ultimo marker staccato dal bordo. Al primo play la
+        // durata vera prende il posto della stima e i marker si assestano.
+        val durataSicura = when {
+            durataSecondi > 0 -> durataSecondi.toFloat()
+            commenti.isEmpty() -> 1f
+            else -> commenti.maxOf { it.timestampSecondi }.coerceAtLeast(1f) * 1.15f
+        }
 
         // .playhead — un rientro dell'1.1% per non farlo mai toccare il bordo
         val inset = 0.011f

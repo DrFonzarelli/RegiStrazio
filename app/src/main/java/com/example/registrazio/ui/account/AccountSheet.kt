@@ -136,7 +136,11 @@ fun AccountSheet(
                 colors.textSecondary,
                 onSimulaReinstallazione
             )
-            DevButton("Svuota tutto il cloud simulato", colors.danger, onSvuotaCloud)
+            DevButton(
+                "Riparti dai dati di prova (cancella tutto il resto)",
+                colors.danger,
+                onSvuotaCloud
+            )
         }
     }
 }
