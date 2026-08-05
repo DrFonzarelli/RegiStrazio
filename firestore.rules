@@ -1,0 +1,47 @@
+// Regole di sicurezza Firestore per RegiStrazio.
+//
+// Da incollare in Firebase Console → Firestore Database → Regole, e da tenere
+// allineate a questo file: la console è la sola copia che conta davvero, questo
+// è solo la versione che si può leggere insieme al codice.
+//
+// **Volutamente permissive.** L'app è per cinque persone di un collettivo che
+// si conoscono: chiunque sia autenticato può leggere e scrivere tutto. Non
+// sono regole adatte a un'app pubblica, e non provano nemmeno a esserlo.
+//
+// L'autenticazione è anonima e non identifica nessuno: `request.auth != null`
+// vuol dire solo "questa richiesta viene da un'app, non da un browser a caso".
+// L'identità vera è `appUid`, generato dall'app, e Firestore non la verifica —
+// il controllo su chi può cancellare un commento sta nell'interfaccia.
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Lettura libera per chiunque sia autenticato: il gruppo condivide tutto.
+    match /{document=**} {
+      allow read: if request.auth != null;
+    }
+
+    match /utenti/{uid} {
+      allow write: if request.auth != null;
+    }
+
+    match /cartelle/{cartellaId} {
+      allow write: if request.auth != null;
+    }
+
+    match /tracce/{tracciaId} {
+      allow write: if request.auth != null;
+    }
+
+    match /tracce/{tracciaId}/commenti/{commentoId} {
+      allow create: if request.auth != null;
+      allow delete: if request.auth != null;
+      // `update` deve restare permesso: l'app lascia modificare un commento
+      // già scritto. Vietandolo, la modifica verrebbe accettata in locale e
+      // rifiutata qui — commento corretto sul proprio telefono, vecchio su
+      // quello di tutti gli altri, e nessun errore visibile.
+      allow update: if request.auth != null;
+    }
+  }
+}

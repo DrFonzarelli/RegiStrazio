@@ -767,6 +767,11 @@ del gesto che fallisce, che è il momento in cui serve.
 
 ## Regole di sicurezza Firestore
 
+Stanno anche in **`firestore.rules`** nella radice del repository, pronte da
+incollare in Firebase Console → Firestore Database → Regole. La console resta
+la sola copia che conta: il file serve a poterle leggere insieme al codice, e
+va tenuto allineato a mano.
+
 ```javascript
 rules_version = '2';
 service cloud.firestore {
@@ -930,6 +935,20 @@ Le dipendenze sono dichiarate in `app/build.gradle.kts`.
 - Allegati e file extra oltre all'audio.
 - Controllo accessi granulare lato Firestore.
 - Paginazione commenti (si caricano tutti in una volta — per 5 persone va bene).
+
+---
+
+## Prima di provare la sincronizzazione
+
+Due cose vanno fatte **in Firebase Console**, o il tasto Sincronizza fallisce
+senza che ci sia niente da correggere nel codice:
+
+1. **Authentication → Sign-in method → Anonymous: abilitato.** È spento di
+   default. Senza, `signInAnonymously()` risponde
+   `CONFIGURATION_NOT_FOUND` e ogni giro si ferma prima di cominciare.
+2. **Firestore Database creato**, e le regole di `firestore.rules` incollate
+   nella scheda Regole. Quelle di default scadono dopo trenta giorni e poi
+   bloccano tutto.
 
 ---
 
