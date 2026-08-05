@@ -2,12 +2,15 @@ package com.example.registrazio.ui.components
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.Text
@@ -21,10 +24,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.registrazio.R
 import com.example.registrazio.ui.theme.AppIcons
 import com.example.registrazio.ui.theme.AppTheme
 
@@ -35,6 +40,12 @@ import com.example.registrazio.ui.theme.AppTheme
  * in Compose (`Modifier.blur` sfoca il contenuto proprio, non ciò che sta
  * sotto). Il colore `topbarBg` porta però già la sua alpha — su questi fondi
  * chiari la resa è pressoché la stessa, senza aggiungere dipendenze.
+ *
+ * **La prima casella a sinistra non è mai vuota.** Dentro una cartella ospita
+ * la freccia indietro, altrove il logo: sempre la stessa larghezza, quindi il
+ * titolo non si sposta passando da una schermata all'altra. Una topbar che
+ * cambia impaginazione a ogni sezione si legge come una barra diversa, ed era
+ * il punto da togliere di mezzo.
  */
 @Composable
 fun AppTopBar(
@@ -45,7 +56,8 @@ fun AppTopBar(
     onIndietro: () -> Unit,
     onCambiaTema: () -> Unit,
     onAggiorna: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    mostraAggiorna: Boolean = true
 ) {
     val colors = AppTheme.colors
 
@@ -81,6 +93,16 @@ fun AppTopBar(
                 onClick = onIndietro,
                 iconSize = 19.dp
             )
+        } else {
+            // Stessa casella da 40dp di AppIconButton, così il titolo parte
+            // dalla stessa ascissa con o senza freccia.
+            Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) {
+                Image(
+                    painter = painterResource(R.drawable.ic_logo),
+                    contentDescription = null,
+                    modifier = Modifier.size(28.dp)
+                )
+            }
         }
 
         Text(
@@ -103,11 +125,13 @@ fun AppTopBar(
             iconSize = if (temaScuro) 17.dp else 16.dp
         )
 
-        AppIconButton(
-            icon = AppIcons.Refresh,
-            contentDescription = "Aggiorna",
-            onClick = { giri++; onAggiorna() },
-            modifier = Modifier.rotate(rotazione)
-        )
+        if (mostraAggiorna) {
+            AppIconButton(
+                icon = AppIcons.Refresh,
+                contentDescription = "Aggiorna",
+                onClick = { giri++; onAggiorna() },
+                modifier = Modifier.rotate(rotazione)
+            )
+        }
     }
 }

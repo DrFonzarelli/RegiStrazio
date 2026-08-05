@@ -147,37 +147,42 @@ fun AppRoot(
 
         Box(Modifier.fillMaxSize().background(colors.bg)) {
             Column(Modifier.fillMaxSize()) {
-                if (schermata != Schermata.Gate) {
-                    AppTopBar(
-                        titolo = cartellaCorrente?.nome ?: "Le tue prove",
-                        mostraIndietro = schermata is Schermata.DettaglioCartella,
-                        avatar = state.identita?.let { io ->
-                            {
-                                Box(
-                                    Modifier
-                                        .size(40.dp)
-                                        .clip(CircleShape)
-                                        .clickable(
-                                            interactionSource = avatarInteraction,
-                                            indication = null
-                                        ) { accountAperto = true },
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Avatar(
-                                        lettera = io.iniziale,
-                                        colore = colors.paletteFor(io.colore),
-                                        size = 26.dp,
-                                        fontSize = 11.sp
-                                    )
-                                }
+                // Anche il Gate ha la sua topbar: senza, l'app si apriva su una
+                // schermata impaginata diversamente da tutte le altre. Lì il
+                // titolo è il nome dell'app, e Sincronizza non c'è — non c'è
+                // ancora un account da sincronizzare.
+                val gate = schermata == Schermata.Gate
+                val utenteInBarra = if (gate) null else state.identita
+                AppTopBar(
+                    titolo = if (gate) "RegiStrazio" else (cartellaCorrente?.nome ?: "Le tue prove"),
+                    mostraIndietro = schermata is Schermata.DettaglioCartella,
+                    avatar = utenteInBarra?.let { io ->
+                        {
+                            Box(
+                                Modifier
+                                    .size(40.dp)
+                                    .clip(CircleShape)
+                                    .clickable(
+                                        interactionSource = avatarInteraction,
+                                        indication = null
+                                    ) { accountAperto = true },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Avatar(
+                                    lettera = io.iniziale,
+                                    colore = colors.paletteFor(io.colore),
+                                    size = 26.dp,
+                                    fontSize = 11.sp
+                                )
                             }
-                        },
-                        temaScuro = state.temaScuro,
-                        onIndietro = vm::tornaHome,
-                        onCambiaTema = vm::cambiaTema,
-                        onAggiorna = vm::aggiorna
-                    )
-                }
+                        }
+                    },
+                    temaScuro = state.temaScuro,
+                    onIndietro = vm::tornaHome,
+                    onCambiaTema = vm::cambiaTema,
+                    onAggiorna = vm::aggiorna,
+                    mostraAggiorna = !gate
+                )
 
                 val padding = PaddingValues(
                     start = MainPadding.horizontal,

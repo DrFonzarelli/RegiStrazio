@@ -1,11 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    Livello di sfondo dell'icona adattiva: la sagoma color crema del logo,
-    la stessa forma tondeggiante che il sistema poi ritaglia con la propria
-    maschera (cerchio, squircle, goccia...) a seconda del launcher.
+    Livello di sfondo dell'icona adattiva: solo il colore crema, steso su
+    tutto il viewport.
 
-    Il viewport resta 192x192 come in Logo_RegiStrazio.svg, così i dati dei
-    path si copiano senza dover ricalcolare le coordinate a mano.
+    Nell'SVG di partenza il crema ha una sagoma tondeggiante propria, qui no —
+    ed è voluto. Il launcher ritaglia l'icona con la *sua* maschera (cerchio,
+    squircle, goccia...), quindi la forma del bordo non la decidiamo noi: se
+    tenessimo la sagoma dell'SVG, dove i suoi angoli sono più arrotondati della
+    maschera si vedrebbero quattro spicchi trasparenti. Il fondo pieno copre
+    qualunque maschera, e il bordo tondo lo mette il sistema.
 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
@@ -14,5 +17,5 @@
     android:viewportHeight="192">
     <path
         android:fillColor="#F1E9E0"
-        android:pathData="M191.78,93.34c0,22.8-.49,41.31.14,59.78.67,19.76-15.29,37.09-38.22,37.91-5.72.2-11.53.87-17.32.88-28.91,0-57.82.23-86.73-.1-9.41-.11-18.82-.91-27.7-4.76-11.1-4.81-17.63-12.3-20-22.48a67.41,67.41,0,0,1-2-15.48C.17,112.7-.1,76.32.21,39.93c.09-10.75,2.94-21,12-29.24C20.13,3.6,30.11.29,41.05.2,77.65-.1,114.25,0,150.86.13c20.77.08,36.91,12.42,39.55,30.12C193.74,52.66,190.62,75.19,191.78,93.34Z" />
+        android:pathData="M0,0 L192,0 L192,192 L0,192 Z" />
 </vector>

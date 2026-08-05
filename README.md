@@ -1016,6 +1016,7 @@ perché la BOM non le mostra): Firestore `26.5.0`, Auth `24.2.0`.
 | Design system (colori, tema chiaro/scuro, icone, raggi) | ✅ | `ui/theme/` |
 | Modelli dati (`Utente`, `Cartella`, `Traccia`, `Commento`) | ✅ | `data/model/` |
 | Gate / onboarding | ✅ | crea account + recupera profilo |
+| Topbar unica per tutte le schermate | ✅ | c'è anche nel Gate; logo o freccia nella stessa casella |
 | Home + cartelle + ghost card | ✅ | |
 | Folder screen, TrackCard, timeline, commenti, voti | ✅ | tutta l'UI del prototipo |
 | Mini player | ✅ | logica di scollegamento inclusa |
@@ -1502,10 +1503,14 @@ drawable Android, che capisce la stessa sintassi di `d` (compresi gli archi
   forma a nastro (un `<polygon points="…">` nell'SVG) è stata riscritta come
   `pathData="M… L… L… … Z"` — stessi punti, stessa forma, sintassi diversa.
 - **L'icona adattiva è due livelli, non uno.** `ic_launcher_background.xml`
-  ha solo la sagoma crema; `ic_launcher_foreground.xml` ha il resto, sfondo
+  tiene il crema; `ic_launcher_foreground.xml` ha il resto, sfondo
   trasparente. È il sistema a comporli e poi ritagliarli con la propria
   maschera (cerchio, squircle, goccia…) a seconda del launcher — per questo
   lo sfondo va tenuto separato dal musetto, non fuso in un'unica immagine.
+  Nel livello di sfondo **la sagoma tondeggiante dell'SVG non c'è**: è un
+  rettangolo crema pieno. Il bordo lo disegna la maschera del launcher, e
+  dove i suoi angoli sono meno arrotondati di quelli della sagoma si
+  vedrebbero quattro spicchi trasparenti.
 - **L'ordine di disegno dentro il foreground conta.** I due anelli scuri
   degli occhi sono ciascuno un `<path>` con **due sottopercorsi** nello stesso
   `d` (cerchio esterno + cerchio interno, versi opposti): è quello che scava
@@ -1537,6 +1542,42 @@ file sorgente, va deciso leggendo cosa nell'immagine "è" lo sfondo.
 
 ---
 
+#### 25. Di un'icona adattiva non si vede tutto il viewport
+
+Trascritti i path 1:1, sul telefono il musetto **riempiva tutto il riquadro**,
+a filo dei bordi, con l'onda tagliata ai lati. Nessun margine, mentre l'SVG di
+partenza ne ha parecchio.
+
+Il viewport di un'icona adattiva non è la parte visibile. Il launcher tiene i
+**72/108 centrali** e li ingrandisce a pieno riquadro: un 1,5× che mangia il
+quarto esterno del disegno. Path a coordinate piene vuol dire disegno a filo
+del bordo — non è un errore di trascrizione, è che mancava lo strato di
+scaling che i template di Android Studio hanno già e che copiando i path a
+mano si salta.
+
+*Fix:* i path del foreground vanno dentro un `<group>` che li rimpicciolisce
+del fattore di ritaglio, attorno al centro del viewport:
+
+```xml
+<group android:pivotX="96" android:pivotY="96"
+       android:scaleX="0.6667" android:scaleY="0.6667">
+```
+
+`0.6667` = 72/108, cioè esattamente il ritaglio: così il quadrato 192×192
+dell'SVG coincide con ciò che resta visibile, e i margini tornano quelli
+dell'originale (≈14% ai lati, 26% sopra, 19% sotto — il musetto non è
+centrato in verticale nemmeno nell'SVG, e quello sbilanciamento va
+conservato, non "corretto").
+
+*Da ricordare:* le linee guida parlano anche di una *safe zone* più stretta,
+un cerchio da 66/108: è l'area che nessuna maschera taglia mai. Fra 66 e 72
+il taglio dipende dalla forma scelta dal launcher. Qui il musetto sta dentro
+il cerchio da 66 anche dopo lo scaling — verificato sui punti più esterni,
+l'onda e il nastro — quindi 72 è sicuro. Con un disegno che riempie di più gli
+angoli conviene scalare a `0.611` (66/108) e non a `0.6667`.
+
+---
+
 ### Trappole del progetto da tenere a mente
 
 **`google-services.json` non è nel repository, ed è voluto.** Sta solo in
@@ -1551,7 +1592,15 @@ prototipo. Lo schema M3 è tenuto al minimo apposta.
 
 **Le icone sono path SVG del prototipo** interpretati da `PathParser` in
 `Icons.kt`, non risorse vettoriali Android. Per aggiungerne una si copia la path
-dall'HTML, non si importa un file.
+dall'HTML, non si importa un file. **L'unica eccezione è il logo**
+(`res/drawable/ic_logo.xml`): è a tre colori, non si tinge col tema, e i vector
+drawable lo reggono meglio di `Icons.kt`, che è fatto per glifi monocromi.
+
+**La prima casella della topbar non è mai vuota.** Dentro una cartella ospita
+la freccia indietro, in Home e nel Gate il logo — sempre 40dp, così il titolo
+parte dalla stessa ascissa e la barra non si "rimonta" cambiando schermata. Chi
+aggiunge una schermata non deve nascondere la casella: deve decidere cosa ci
+mette dentro.
 
 **Cose che il prototipo fa e che Compose non ha già pronte** — sono già
 risolte, non riprogettarle:
