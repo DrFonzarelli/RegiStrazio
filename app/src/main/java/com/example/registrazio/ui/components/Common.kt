@@ -326,3 +326,35 @@ fun MutedText(
 
 /** Larghezza massima della colonna app, centrata (`.app { max-width:480px; margin:0 auto }`). */
 fun Modifier.appColumn(maxWidth: Dp): Modifier = this.widthIn(max = maxWidth)
+
+/**
+ * Nuvoletta con il numero di tracce in ballo nella coda dei download.
+ *
+ * Sta in due posti, e sono gli unici due dove serve: accanto al tasto
+ * "Scarica tutte" dentro la cartella, e sulla riga della cartella in Home —
+ * cioè addosso alla cosa di cui parla. In topbar l'avevo messa prima, ma lì
+ * dice solo "sta scaricando qualcosa, da qualche parte": chi la vede deve
+ * ancora cercare *dove*, e con due cartelle collegate è una ricerca vera.
+ *
+ * Conta quelle in corso **e** quelle in attesa: sono tutte cose che questa
+ * cartella deve ancora finire, ed è quello che uno vuole sapere guardandola.
+ */
+@Composable
+fun IndicatoreCoda(quante: Int, modifier: Modifier = Modifier) {
+    if (quante <= 0) return
+    val colors = AppTheme.colors
+    Row(
+        modifier,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(3.dp)
+    ) {
+        AppIcon(com.example.registrazio.ui.theme.AppIcons.Cloud, 13.dp, colors.accent)
+        Text(
+            quante.toString(),
+            color = colors.accent,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1
+        )
+    }
+}

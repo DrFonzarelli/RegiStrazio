@@ -47,6 +47,7 @@ import com.example.registrazio.data.model.Cartella
 import com.example.registrazio.ui.StatoCollegamento
 import com.example.registrazio.ui.components.AppIconButton
 import com.example.registrazio.ui.components.AppTextField
+import com.example.registrazio.ui.components.IndicatoreCoda
 import com.example.registrazio.ui.components.appBorder
 import com.example.registrazio.ui.components.pressScale
 import com.example.registrazio.ui.theme.AppIcon
@@ -62,6 +63,8 @@ import com.example.registrazio.util.apriMega
 fun HomeScreen(
     cartelle: List<Cartella>,
     conteggioTracce: (String) -> Int,
+    /** Quante tracce di questa cartella sono in corso o in fila per scaricarsi. */
+    conteggioInCoda: (String) -> Int,
     cartelleRinominabili: Set<String>,
     collegamento: StatoCollegamento,
     onApriCartella: (String) -> Unit,
@@ -89,6 +92,7 @@ fun HomeScreen(
             FolderCard(
                 nome = cartella.nome,
                 numTracce = conteggioTracce(cartella.id),
+                inCoda = conteggioInCoda(cartella.id),
                 rinominabile = cartella.id in cartelleRinominabili,
                 rinominaSubito = daRinominare == cartella.id,
                 onClick = { onApriCartella(cartella.id) },
@@ -119,6 +123,7 @@ fun HomeScreen(
 @Composable
 private fun FolderCard(
     nome: String,
+    inCoda: Int,
     numTracce: Int,
     rinominabile: Boolean,
     rinominaSubito: Boolean,
@@ -208,6 +213,11 @@ private fun FolderCard(
                 fontSize = 12.sp
             )
         }
+
+        // Qui invece che in topbar: da fuori "sta scaricando qualcosa" non
+        // basta, serve sapere *dove* — e con più cartelle collegate cercarlo
+        // era una piccola caccia al tesoro.
+        IndicatoreCoda(inCoda, Modifier.padding(end = 6.dp))
 
         AppIcon(AppIcons.ChevronRightSmall, 15.dp, colors.textMuted)
     }

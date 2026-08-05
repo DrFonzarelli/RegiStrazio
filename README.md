@@ -1935,10 +1935,12 @@ ripartita da sola da una che aspettava un tocco: erano la stessa percentuale
 grigia. Lo zero non si scrive mai — "In coda · 0%" farebbe pensare a un
 download partito e piantato.
 
-**Dove si vede la coda:** il conteggio `+N in coda` sta accanto al tasto che le
-ha messe in fila, che è dove si guarda per sapere se sta finendo. La nuvoletta
-in topbar mostra **solo quello che scarica altrove**: dentro la cartella
-sarebbe una ripetizione, fuori è l'unico modo di accorgersene.
+**Dove si vede la coda:** la nuvoletta col numero (`IndicatoreCoda`) sta in due
+posti, addosso alla cosa di cui parla — accanto al tasto "Scarica tutte" dentro
+la cartella, e sulla riga della cartella in Home. In topbar c'era stata per un
+giro, ma da lì diceva solo "sta scaricando qualcosa, da qualche parte": chi la
+vedeva doveva ancora cercare *dove*, e con più cartelle collegate è una ricerca
+vera.
 
 **La fase appartiene a chi dà i comandi, non a chi riporta i byte.**
 `onProgresso` aggiorna solo il numero: `cancel()` è cooperativo e non

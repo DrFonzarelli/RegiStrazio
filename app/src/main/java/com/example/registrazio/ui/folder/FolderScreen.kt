@@ -36,6 +36,7 @@ import com.example.registrazio.data.model.Traccia
 import com.example.registrazio.ui.Ordinamento
 import com.example.registrazio.ui.RichiestaCommento
 import com.example.registrazio.ui.StatoScaricamento
+import com.example.registrazio.ui.components.IndicatoreCoda
 import com.example.registrazio.ui.components.appBorder
 import com.example.registrazio.ui.theme.AppIcon
 import com.example.registrazio.ui.theme.AppIcons
@@ -94,7 +95,11 @@ fun FolderScreen(
                 }.toFloat(),
                 inCorso = bulkInCorso,
                 inPausa = bulkInPausa,
-                inCoda = tracce.count { scaricamenti[it.id]?.inAttesa == true },
+                // In corso **e** in attesa: sono tutte cose che questa cartella
+                // deve ancora finire.
+                inCoda = tracce.count {
+                    scaricamenti[it.id]?.let { s -> !s.inPausa } == true
+                },
                 onCambiaOrdinamento = onCambiaOrdinamento,
                 onScaricaTutte = onScaricaTutte
             )
@@ -138,7 +143,6 @@ private fun SortBar(
     onCambiaOrdinamento: () -> Unit,
     onScaricaTutte: () -> Unit
 ) {
-    val colors = AppTheme.colors
     Row(
         Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -149,18 +153,9 @@ private fun SortBar(
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             BulkDownloadButton(scaricate, totali, parzialeInCorso, inCorso, inPausa, onScaricaTutte)
-            // Quante aspettano il turno, accanto al tasto che le ha messe in
-            // fila: è lì che si guarda per sapere se la coda sta finendo. In
-            // topbar la stessa informazione c'è solo quando si è altrove, dove
-            // questo tasto non si vede.
-            if (inCoda > 0) {
-                Text(
-                    "+$inCoda in coda",
-                    color = colors.textMuted,
-                    fontSize = 11.sp,
-                    maxLines = 1
-                )
-            }
+            // Quante ne restano, accanto al tasto che le ha messe in fila: è lì
+            // che si guarda per sapere se la coda sta finendo.
+            IndicatoreCoda(inCoda)
         }
         SortToggle(ordinamento, onCambiaOrdinamento)
     }

@@ -177,19 +177,7 @@ fun AppRoot(
                     onIndietro = vm::tornaHome,
                     onCambiaTema = vm::cambiaTema,
                     onAggiorna = vm::aggiorna,
-                    mostraAggiorna = !gate,
-                    // Solo quello che sta scaricando **fuori** da questa
-                    // schermata. Dentro la cartella la coda ha già il suo
-                    // contatore accanto al tasto, dove è ovvio cosa significa;
-                    // la nuvoletta serve a chi è andato altrove, che è
-                    // esattamente chi non ha modo di sapere che sta ancora
-                    // succedendo qualcosa.
-                    scaricamentiAttivi = state.scaricamenti
-                        .filterValues { it.fase != FaseDownload.PAUSA }
-                        .count { (id, _) ->
-                            val cartella = state.tracce.find { it.id == id }?.cartellaId
-                            cartella != (schermata as? Schermata.DettaglioCartella)?.cartellaId
-                        }
+                    mostraAggiorna = !gate
                 )
 
                 val padding = PaddingValues(
@@ -214,6 +202,16 @@ fun AppRoot(
                         is Schermata.Home -> HomeScreen(
                             cartelle = state.cartelle,
                             conteggioTracce = { id -> state.tracce.count { it.cartellaId == id } },
+                            // La nuvoletta sulla riga della cartella: quante
+                            // sue tracce sono in corso o in fila. Da fuori
+                            // "sta scaricando qualcosa" non basta — serve
+                            // sapere dove.
+                            conteggioInCoda = { id ->
+                                state.tracce.count {
+                                    it.cartellaId == id &&
+                                        state.scaricamenti[it.id]?.let { s -> !s.inPausa } == true
+                                }
+                            },
                             // Ora sono tutte cartelle vere, comprese quelle di
                             // prova: si rinominano e si scollegano tutte.
                             cartelleRinominabili = state.cartelle.map { it.id }.toSet(),
