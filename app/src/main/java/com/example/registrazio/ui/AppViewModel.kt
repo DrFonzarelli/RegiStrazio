@@ -31,6 +31,7 @@ import com.example.registrazio.util.OrdineNaturale
 import com.example.registrazio.util.senzaRete
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.currentCoroutineContext
@@ -303,13 +304,40 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             fileLocali.putAll(archivio.download())
             val conteggio = archivio.pendenti()
             _state.update {
-                it.copy(cartelle = cartelle, tracce = tracce, pendenti = conteggio)
+                it.copy(
+                    cartelle = cartelle,
+                    tracce = tracce,
+                    pendenti = conteggio,
+                    scaricamenti = scaricamentiLasciatiAMeta(tracce)
+                )
             }
             // Dopo l'archivio, mai prima: il seme deve poter vedere cosa c'è
             // già, o riscriverebbe sopra il lavoro fatto sulle stesse cartelle.
             seminaDatiDiProva()
         }
     }
+
+    /**
+     * I download interrotti, ritrovati sul disco all'avvio.
+     *
+     * `scaricamenti` vive in memoria e muore con l'app, il `.parziale` no:
+     * senza questo, riaprendo l'app una traccia lasciata a metà si presentava
+     * come mai toccata, e la percentuale ricompariva solo premendo di nuovo
+     * scarica. Riprendeva dal punto giusto — non lo diceva.
+     *
+     * Tutti in pausa, perché è quello che sono: nessun download riparte da
+     * solo alla riapertura.
+     */
+    private fun scaricamentiLasciatiAMeta(tracce: List<Traccia>): Map<String, StatoScaricamento> =
+        tracce.mapNotNull { t ->
+            if (t.scaricata || t.dimensioneByte <= 0) return@mapNotNull null
+            val presi = scaricatore.byteGiaPresi(File(cartellaAudio(), "${t.id}.audio"))
+            if (presi <= 0) return@mapNotNull null
+            t.id to StatoScaricamento(
+                frazione = (presi.toFloat() / t.dimensioneByte).coerceIn(0f, 1f),
+                inPausa = true
+            )
+        }.toMap()
 
     /** Esegue una scrittura su disco e riallinea il conteggio dei pendenti. */
     private fun salva(blocco: suspend () -> Unit) {
@@ -515,7 +543,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun riproduciDa(tracciaId: String, secondi: Float) {
         val r = _state.value.riproduzione
-        if (r.tracciaId != tracciaId || tracciaCaricata != tracciaId) {
+        // Anche saltare a un commento è un'interruzione, e va sfruttata come la
+        // pausa: se nel frattempo il file è arrivato sul telefono, si riparte
+        // da lì. L'audio si interrompe comunque per andare altrove, quindi qui
+        // il passaggio non costa niente — e da quel momento i salti successivi
+        // sono immediati invece di passare da MEGA.
+        if (r.tracciaId != tracciaId || tracciaCaricata != tracciaId || sorgenteSuperata(tracciaId)) {
             avvia(tracciaId, secondi)
             return
         }
@@ -1174,14 +1207,24 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 val t = traccia(id) ?: continue
                 if (t.scaricata) { codaBulk = codaBulk - id; continue }
                 // Sta già scaricando perché qualcuno l'ha avviata a mano: la
-                // coda non la raddoppia. `avviaDownload` si difende guardando
-                // `jobDownload`, ma qui si chiamava `scaricaUna` dritta, senza
-                // passare da lì né lasciare traccia — due discese sullo stesso
-                // file, sullo stesso `.parziale`, e due percentuali che si
-                // contendono la stessa barra.
+                // coda non la raddoppia. Due discese sullo stesso file
+                // scrivono sullo stesso `.parziale` e si contendono la barra.
                 if (jobDownload[id]?.isActive == true) { codaBulk = codaBulk - id; continue }
                 tentate++
-                val errore = scaricaUna(t)
+
+                // La coda lascia il proprio job in `jobDownload` come farebbe
+                // `avviaDownload`. Prima chiamava `scaricaUna` dritta, senza
+                // comparire lì: la guardia contro il doppio avvio proteggeva
+                // la coda dal tasto singolo, ma non il tasto singolo dalla
+                // coda — perché per lui quella traccia risultava ferma. Una
+                // mappa sola, e le due strade si vedono a vicenda.
+                val figlio = async { scaricaUna(t) }
+                jobDownload[id] = figlio
+                val errore = try {
+                    figlio.await()
+                } finally {
+                    if (jobDownload[id] === figlio) jobDownload.remove(id)
+                }
                 // Senza linea le altre falliranno tutte allo stesso modo: meglio
                 // fermare la coda e lasciarla pronta a ripartire che sfilare
                 // cinque errori uno dietro l'altro.

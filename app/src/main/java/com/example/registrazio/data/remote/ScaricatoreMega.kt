@@ -30,9 +30,15 @@ class ScaricatoreMega(
     private val megaApi: MegaApi,
     private val client: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(20, TimeUnit.SECONDS)
-        // Nessun timeout di lettura: un brano lungo su rete lenta impiega
-        // quanto impiega, e interromperlo a metà non aiuterebbe nessuno.
-        .readTimeout(0, TimeUnit.SECONDS)
+        // Il timeout di lettura **non** è il tempo che può durare il download:
+        // è il tempo massimo fra un byte e il successivo. Un brano lungo su
+        // rete lenta non lo sfiora nemmeno, purché i byte continuino ad
+        // arrivare. Metterlo a zero, come era prima, non toglie un limite:
+        // toglie l'unico modo di accorgersi che la connessione è morta senza
+        // chiudersi — e lì la `read()` resta appesa per sempre, senza errore e
+        // senza avanzamento. Sono i download che si piantavano a metà e
+        // ripartivano solo mettendoli in pausa a mano.
+        .readTimeout(30, TimeUnit.SECONDS)
         .build()
 ) {
 

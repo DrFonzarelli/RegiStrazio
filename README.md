@@ -1840,6 +1840,55 @@ guarda smette di credere anche a quello che funziona.
 
 ---
 
+#### 32. Un timeout di lettura a zero non toglie un limite, toglie un allarme
+
+I download si piantavano a metà — 40%, nessun errore, nessun avanzamento — e
+ripartivano solo mettendoli in pausa e riprendendoli a mano.
+
+```kotlin
+// Nessun timeout di lettura: un brano lungo su rete lenta impiega
+// quanto impiega, e interromperlo a metà non aiuterebbe nessuno.
+.readTimeout(0, TimeUnit.SECONDS)
+```
+
+Il commento descriveva un problema che non esiste. Il `readTimeout` di OkHttp
+non limita la durata del download: limita l'attesa **fra un byte e il
+successivo**. Un brano da venti minuti su rete lenta non lo sfiora, purché i
+byte continuino ad arrivare. A zero, invece, una connessione morta senza
+chiudersi — capita di continuo passando fra celle o su un WiFi debole — lascia
+la `read()` appesa per sempre: nessuna eccezione da mostrare, nessun byte da
+contare.
+
+*Fix:* 30 secondi. Se per mezzo minuto non arriva niente, è un errore vero, con
+il messaggio giusto e il `.parziale` pronto per riprendere.
+
+*Da ricordare:* prima di disattivare un timeout, guardare cosa misura davvero.
+Quelli che sembrano "limiti alla durata del lavoro" sono quasi sempre limiti
+al **silenzio**, e sono la sola differenza fra un errore e un blocco muto.
+
+---
+
+#### 33. Due strade per la stessa operazione, due mappe diverse
+
+Restavano due tracce in scaricamento insieme, una con l'icona grigia in pausa e
+la percentuale che però avanzava.
+
+L'errore 30 era stato chiuso a metà. La coda saltava le tracce già presenti in
+`jobDownload`, ma continuava a chiamare `scaricaUna` direttamente **senza
+lasciarci il proprio job**. La guardia proteggeva quindi la coda dal tasto
+singolo, e non il tasto singolo dalla coda: per `avviaDownload` una traccia che
+la coda stava scaricando risultava ferma, e ne partiva una seconda copia.
+
+*Fix:* la coda registra il proprio job in `jobDownload` come fa
+`avviaDownload`, con un `async` di cui aspetta il risultato. Una mappa sola, e
+le due strade si vedono a vicenda.
+
+*Da ricordare:* quando due strade portano alla stessa operazione, una guardia
+su una sola delle due non è mezza protezione — è protezione in una direzione
+sola, che è il modo migliore per crederla completa.
+
+---
+
 ### Trappole del progetto da tenere a mente
 
 **`google-services.json` non è nel repository, ed è voluto.** Sta solo in
@@ -1898,12 +1947,13 @@ solo le cartelle con `aggiuntoDa` uguale al proprio `appUid` — più quelle con
 `aggiuntoDa` vuoto, che nessuno rivendica e che nascondere renderebbe
 irremovibili.
 
-**Il passaggio da streaming a file locale avviene alla prima pausa.** Se il
-download finisce mentre la traccia suona, l'audio non si interrompe per
-rimettere lo stesso brano da un'altra sorgente. Ma `caricataDaFile` ricorda da
-dove il player stava leggendo **quando ha cominciato**, e alla ripresa
-successiva si riparte dal file. Non basta guardare `fileLocali`: quella dice
-solo se il file c'è adesso.
+**Il passaggio da streaming a file locale avviene alla prima interruzione.** Se
+il download finisce mentre la traccia suona, l'audio non si interrompe per
+rimettere lo stesso brano da un'altra sorgente. Ma alla prima pausa — o al
+primo salto a un commento, che l'audio lo interrompe comunque — si riparte dal
+file. `caricataDaFile` ricorda da dove il player stava leggendo **quando ha
+cominciato**: non basta guardare `fileLocali`, che dice solo se il file c'è
+adesso, ed è la differenza fra i due a dire se conviene ricaricare.
 
 **La sort bar occupa l'indice 0 della lista.** Ogni volta che si converte la
 posizione di una traccia in indice della `LazyColumn` serve `+1`. Sbagliarlo non
