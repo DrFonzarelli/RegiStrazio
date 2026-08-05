@@ -34,6 +34,8 @@ data class TracciaEntity(
     val cartellaId: String,
     val titolo: String,
     val idFileMega: String,
+    /** Peso del file su MEGA: denominatore della percentuale di download. */
+    val dimensioneByte: Long,
     val durataSecondi: Int,
     val ascolti: Int,
     val mioVoto: VotoStella,
@@ -65,6 +67,7 @@ data class TracciaEntity(
             cartellaId == other.cartellaId &&
             titolo == other.titolo &&
             idFileMega == other.idFileMega &&
+            dimensioneByte == other.dimensioneByte &&
             durataSecondi == other.durataSecondi &&
             ascolti == other.ascolti &&
             mioVoto == other.mioVoto &&

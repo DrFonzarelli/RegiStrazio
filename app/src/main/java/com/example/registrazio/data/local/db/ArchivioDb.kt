@@ -109,7 +109,11 @@ interface ArchivioDao {
         CommentoEntity::class,
         DownloadEntity::class
     ],
-    version = 2,
+    // 3: `dimensioneByte` su TracciaEntity. Con la migrazione distruttiva qui
+    // sotto il database si azzera, e le cartelle si riprendono da MEGA — ma i
+    // commenti non ancora sincronizzati no. Finché Firestore non c'è, alzare
+    // questo numero vuol dire perderli.
+    version = 3,
     exportSchema = false
 )
 @TypeConverters(Convertitori::class)

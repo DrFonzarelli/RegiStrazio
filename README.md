@@ -982,7 +982,7 @@ e `app/build.gradle.kts` — se modifichi lì, aggiorna anche qui.
 | core-ktx | 1.18.0 | catalog `coreKtx` |
 | lifecycle (runtime + viewmodel-compose) | 2.10.0 | catalog `lifecycleRuntimeKtx` |
 | activity-compose | 1.13.0 | catalog `activityCompose` |
-| Room | 2.7.1 | catalog `room` |
+| Room | 2.7.1 | catalog `room` — schema DB alla versione 3 |
 | Media3 / ExoPlayer | 1.2.0 | hardcoded |
 | navigation-compose | 2.7.7 | hardcoded |
 | kotlinx-coroutines-android | 1.7.1 | hardcoded |
@@ -1798,6 +1798,48 @@ la guardia sta nell'operazione, o va ripetuta su tutte le strade.
 
 ---
 
+#### 31. Una percentuale senza denominatore, e un file mozzato dato per buono
+
+Due difetti nello stesso punto, e insieme facevano perdere fiducia nella barra
+di avanzamento: restava a **zero** per tutto lo scaricamento, e fermandola e
+riprendendola saltava di colpo al 50%.
+
+Il totale veniva dal `Content-Length` della risposta:
+
+```kotlin
+val totale = if (corpo.contentLength() > 0) corpo.contentLength() + daByte else -1L
+```
+
+MEGA non lo manda sempre. Quando manca, `totale` è `-1` e `onProgresso` non
+viene **mai** chiamato: il download procedeva benissimo, era il numero a non
+esistere. Alla ripresa il `.parziale` valeva già metà file, quel valore
+entrava in `daByte`, e la prima percentuale calcolata partiva da lì.
+
+La dimensione, però, la sappiamo **prima di cominciare**: sta nell'elenco della
+cartella, in `FileMega.dimensioneByte`. Non c'era solo dove serviva, perché non
+veniva conservata. Ora è una colonna di `TracciaEntity` e fa tre lavori:
+
+- **denominatore** della percentuale, indipendente da come viaggia la risposta;
+- **percentuale di partenza** letta dal disco invece che dalla memoria — il
+  `.parziale` sopravvive alla chiusura dell'app, lo stato no, e questo chiude
+  il vecchio debito del download in pausa che ripartiva visivamente da zero;
+- **prova che il file è intero.**
+
+L'ultimo era un bug vero e silenzioso: un flusso che si chiude a metà — rete
+che cade, server che tronca — non alza nessuna eccezione. La `read()`
+restituisce `-1` esattamente come a fine file, e il parziale veniva rinominato
+e segnato come scaricato. Un file mozzato con la spunta verde accanto. Adesso
+si confronta la lunghezza con quella attesa (AES-CTR non cambia la dimensione,
+quindi decifrato e cifrato pesano uguale) e se non torna è un errore, con il
+`.parziale` lasciato dov'è per riprendere.
+
+*Da ricordare:* prima di mostrare una percentuale, chiedersi da dove viene il
+denominatore e cosa succede quando non c'è. Una barra ferma a zero mentre il
+lavoro procede è peggio di nessuna barra: dice che l'app è bloccata, e chi
+guarda smette di credere anche a quello che funziona.
+
+---
+
 ### Trappole del progetto da tenere a mente
 
 **`google-services.json` non è nel repository, ed è voluto.** Sta solo in
@@ -1856,6 +1898,13 @@ solo le cartelle con `aggiuntoDa` uguale al proprio `appUid` — più quelle con
 `aggiuntoDa` vuoto, che nessuno rivendica e che nascondere renderebbe
 irremovibili.
 
+**Il passaggio da streaming a file locale avviene alla prima pausa.** Se il
+download finisce mentre la traccia suona, l'audio non si interrompe per
+rimettere lo stesso brano da un'altra sorgente. Ma `caricataDaFile` ricorda da
+dove il player stava leggendo **quando ha cominciato**, e alla ripresa
+successiva si riparte dal file. Non basta guardare `fileLocali`: quella dice
+solo se il file c'è adesso.
+
 **La sort bar occupa l'indice 0 della lista.** Ogni volta che si converte la
 posizione di una traccia in indice della `LazyColumn` serve `+1`. Sbagliarlo non
 dà errore di compilazione: fa scrollare sulla traccia sbagliata.
@@ -1873,13 +1922,9 @@ Cose consapevolmente lasciate indietro, da affrontare quando conviene:
 - **`navigation-compose` è dichiarata e mai usata.** La navigazione è fatta a
   mano con la sealed interface `Schermata`. O si toglie la dipendenza, o si
   decide di adottarla davvero.
-- **Un download in pausa non sopravvive alla chiusura dell'app.** Il file
-  `.parziale` resta su disco e la ripresa *funziona* — il download successivo
-  riparte da lì invece che da zero — ma la percentuale non si rivede: lo stato
-  `scaricamenti` vive in memoria. Per mostrarla servirebbe la dimensione totale
-  del file, che oggi non è in `TracciaEntity`. Costo: una colonna in più e una
-  migrazione. Nel frattempo il comportamento è comunque quello giusto, solo
-  silenzioso.
+- ~~**Un download in pausa non sopravvive alla chiusura dell'app.**~~ Chiuso
+  con l'errore 31: `dimensioneByte` è in `TracciaEntity`, e la percentuale di
+  partenza si legge dal `.parziale` sul disco invece che dallo stato in memoria.
 - **Versioni sparse.** Room, Media3, OkHttp, Gson, coroutines e security-crypto
   sono ancora scritte a mano in `app/build.gradle.kts` invece che nel catalog.
 - **`applicationId` è ancora `com.example.registrazio`**, il default di Android
@@ -1890,9 +1935,8 @@ Cose consapevolmente lasciate indietro, da affrontare quando conviene:
 - **La durata si sa solo premendo play.** È la radice degli errori 26 e del
   salto dei marker quando la scala si assesta: fino al primo play la posizione
   dei commenti è una stima. Due strade per chiuderla davvero, in ordine di
-  costo: **(a)** stimarla dalla dimensione del file, che MEGA dà insieme
-  all'elenco — serve una colonna in più su `TracciaEntity`, e con
-  `fallbackToDestructiveMigration` attivo costa solo un bump di versione, ma
+  costo: **(a)** stimarla dalla dimensione del file — che ora è già in
+  `TracciaEntity.dimensioneByte`, quindi non costa più niente prenderla, ma
   resta una stima, perché il bitrate non lo conosciamo; **(b)** scaricare i
   primi kilobyte e leggere l'header audio — AES-CTR permette di decifrare un
   intervallo qualsiasi, quindi è fattibile, e darebbe il numero **vero** senza

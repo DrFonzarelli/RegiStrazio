@@ -225,6 +225,16 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Traccia attualmente caricata nel player: serve a distinguere una ripresa da un avvio. */
     private var tracciaCaricata: String? = null
+
+    /**
+     * [tracciaCaricata] viene dal file sul telefono e non dallo streaming.
+     *
+     * Non è ricavabile guardando `fileLocali`: quella mappa dice se il file
+     * c'è **adesso**, non da dove il player stava leggendo quando ha
+     * cominciato — ed è proprio la differenza fra i due che dice se conviene
+     * ricaricare.
+     */
+    private var caricataDaFile = false
     private var bulkJob: Job? = null
     private var seqMessaggi = 0L
 
@@ -457,11 +467,26 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             // Stessa traccia già caricata nel player: si riprende e basta.
             // Ripassare da capo vorrebbe dire chiedere a MEGA un altro
             // indirizzo e riscaricare il flusso, con l'attesa che ne segue.
-            r.tracciaId == tracciaId && tracciaCaricata == tracciaId -> riprendi(tracciaId)
+            r.tracciaId == tracciaId && tracciaCaricata == tracciaId && !sorgenteSuperata(tracciaId) ->
+                riprendi(tracciaId)
 
             else -> avvia(tracciaId, if (r.tracciaId == tracciaId) r.posizioneSecondi else 0f)
         }
     }
+
+    /**
+     * Il player sta ancora leggendo da MEGA una traccia che nel frattempo è
+     * arrivata sul telefono.
+     *
+     * Il download può finire mentre la traccia suona, e interrompere l'audio
+     * per rimettere lo stesso brano da un'altra sorgente sarebbe peggio del
+     * problema. Però alla **prima pausa** il passaggio va fatto: da lì in poi
+     * ogni ripresa e ogni salto sarebbero istantanei, e restare sullo streaming
+     * vuol dire pagare un'attesa per un file che è già lì. Prima ci si arrivava
+     * solo per caso, andando su un'altra traccia e tornando indietro.
+     */
+    private fun sorgenteSuperata(tracciaId: String): Boolean =
+        !caricataDaFile && fileLocali[tracciaId]?.exists() == true
 
     private fun riprendi(tracciaId: String) {
         player.riprendi()
@@ -553,6 +578,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         // Da qui il player non contiene più la traccia buona: o ne carica
         // un'altra, o va fermato perché si passa a una traccia simulata.
         tracciaCaricata = null
+        caricataDaFile = false
 
         // Il servizio deve sapere cosa sta suonando **prima** che parta l'audio:
         // è da qui che la notifica prende il titolo, e il commento rapido la
@@ -586,6 +612,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 if (file.exists()) {
                     player.riproduciFile(file, da, traccia.titolo)
                     tracciaCaricata = traccia.id
+                    caricataDaFile = true
                     seguiPosizione(traccia.id)
                     return@launch
                 }
@@ -625,6 +652,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
             player.riproduci(url, chiave, da, traccia.titolo)
             tracciaCaricata = traccia.id
+            caricataDaFile = false
             seguiPosizione(traccia.id)
         }
     }
@@ -671,6 +699,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         playJob = null
         player.ferma()
         tracciaCaricata = null
+        caricataDaFile = false
         // Niente più audio: via anche la notifica, che prometterebbe comandi su
         // qualcosa che non c'è.
         PlayerCondiviso.segnaInAscolto(null)
@@ -989,14 +1018,30 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             return "Ricollega la cartella per poter scaricare questa traccia"
         }
 
-        val partenza = _state.value.scaricamenti[traccia.id]?.frazione ?: 0f
+        val destinazione = File(cartellaAudio(), "${traccia.id}.audio")
+
+        // La percentuale di partenza si legge dal disco, non dalla memoria:
+        // il `.parziale` sopravvive alla chiusura dell'app, lo stato no. Il
+        // valore in memoria resta il ripiego per quando il peso del file è
+        // ignoto — una cartella collegata prima che questo campo esistesse.
+        val partenza = if (traccia.dimensioneByte > 0) {
+            (scaricatore.byteGiaPresi(destinazione).toFloat() / traccia.dimensioneByte)
+                .coerceIn(0f, 1f)
+        } else {
+            _state.value.scaricamenti[traccia.id]?.frazione ?: 0f
+        }
         _state.update {
             it.copy(scaricamenti = it.scaricamenti + (traccia.id to StatoScaricamento(partenza, false)))
         }
-        val destinazione = File(cartellaAudio(), "${traccia.id}.audio")
 
         return try {
-            scaricatore.scarica(link, traccia.idFileMega, chiave, destinazione) { frazione ->
+            scaricatore.scarica(
+                link,
+                traccia.idFileMega,
+                chiave,
+                destinazione,
+                traccia.dimensioneByte
+            ) { frazione ->
                 _state.update { s ->
                     // **Il progresso aggiorna solo il numero, mai `inPausa`.**
                     //
@@ -1311,6 +1356,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     cartellaId = cartella.id,
                     titolo = titoloDaMega,
                     idFileMega = f.handle,
+                    dimensioneByte = f.dimensioneByte,
                     // 0 = ancora ignota. La durata sta dentro il file audio,
                     // che a questo punto non abbiamo ancora aperto.
                     durataSecondi = 0
@@ -1327,7 +1373,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     titolo = if (precedente.titolo == titoloDaMega) titoloDaMega
                     else precedente.titolo,
                     cartellaId = cartella.id,
-                    idFileMega = f.handle
+                    idFileMega = f.handle,
+                    // Il peso lo dice MEGA, sempre: se il file è stato
+                    // risostituito là, quello vecchio non vale più.
+                    dimensioneByte = f.dimensioneByte
                 )
             }
         }

@@ -31,6 +31,16 @@ data class Traccia(
     val titolo: String,
     /** Node handle del file su MEGA. */
     val idFileMega: String = "",
+    /**
+     * Peso del file su MEGA in byte, `0` se ignoto.
+     *
+     * Lo dice l'elenco della cartella, quindi si sa **prima** di scaricare. È
+     * il denominatore vero della percentuale di download: `Content-Length` non
+     * arriva sempre, e quando manca la barra resta ferma a zero per tutto lo
+     * scaricamento. Serve anche a riconoscere un file arrivato a metà, che
+     * altrimenti passerebbe per completo.
+     */
+    val dimensioneByte: Long = 0L,
     val durataSecondi: Int,
     /** ~200 valori 0.0–1.0, `null` finché nessuno l'ha ancora calcolata. */
     val waveformData: List<Float>? = null,

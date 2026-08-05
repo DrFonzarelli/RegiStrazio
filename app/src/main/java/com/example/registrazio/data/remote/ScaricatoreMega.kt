@@ -41,17 +41,38 @@ class ScaricatoreMega(
         File(destinazione.absolutePath + ".parziale")
 
     /**
+     * Quanti byte di [destinazione] sono già sul disco, `0` se non c'è niente.
+     *
+     * Il `.parziale` sopravvive alla chiusura dell'app, la percentuale in
+     * memoria no: senza questo, riaprendo l'app un download a metà ripartiva
+     * visivamente da zero per poi saltare al 50% al primo aggiornamento.
+     * Riprendeva dal punto giusto — lo diceva male.
+     */
+    fun byteGiaPresi(destinazione: File): Long =
+        parzialeDi(destinazione).takeIf { it.exists() }?.length() ?: 0L
+
+    /**
      * Scarica [handle] dentro [destinazione], riportando l'avanzamento da 0 a 1.
      *
      * Se esiste già un `.parziale` riprende da lì. Interrompere il job **non**
      * cancella quel file: è tutto il senso della ripresa. A buttarlo è solo chi
      * rinuncia davvero al download.
+     *
+     * @param dimensioneAttesa peso del file secondo l'elenco della cartella,
+     *   `0` se ignoto. Fa due lavori, ed entrambi contano: è il denominatore
+     *   della percentuale — `Content-Length` non arriva sempre, e senza un
+     *   totale la barra resta a zero per tutto lo scaricamento — ed è il
+     *   metro per dire se il file è arrivato **intero**. Un flusso che si
+     *   chiude prima del tempo non alza nessuna eccezione: la `read()`
+     *   restituisce `-1` come a fine file, e senza un confronto il troncato
+     *   verrebbe rinominato e dato per buono.
      */
     suspend fun scarica(
         link: LinkMega,
         handle: String,
         chiave: MegaCrypto.ChiaveFile,
         destinazione: File,
+        dimensioneAttesa: Long,
         onProgresso: (Float) -> Unit
     ): Unit = withContext(Dispatchers.IO) {
         destinazione.parentFile?.mkdirs()
@@ -81,7 +102,14 @@ class ScaricatoreMega(
             val corpo = risposta.body
                 ?: throw MegaException(null, "MEGA non ha mandato il contenuto del file.")
 
-            val totale = if (corpo.contentLength() > 0) corpo.contentLength() + daByte else -1L
+            // Prima quello che ha detto MEGA elencando la cartella, poi il
+            // `Content-Length` come ripiego. In quest'ordine perché il primo
+            // c'è sempre e non dipende da come la risposta viene trasferita.
+            val totale = when {
+                dimensioneAttesa > 0 -> dimensioneAttesa
+                corpo.contentLength() > 0 -> corpo.contentLength() + daByte
+                else -> -1L
+            }
 
             val cifrario = Cipher.getInstance("AES/CTR/NoPadding").apply {
                 init(
@@ -112,6 +140,21 @@ class ScaricatoreMega(
 
             // Interrotto a metà: il parziale resta dov'è, pronto per la ripresa.
             if (!currentCoroutineContext().isActive) return@withContext
+        }
+
+        // Il flusso è finito, ma "finito" non vuol dire "completo": una
+        // connessione che cade a metà chiude lo stream esattamente come un
+        // file arrivato in fondo. AES-CTR non cambia la lunghezza, quindi il
+        // decifrato pesa quanto il cifrato e i due numeri si confrontano
+        // direttamente. Il parziale resta al suo posto: alla ripresa si
+        // riparte da lì invece che da zero.
+        val ottenuti = parziale.length()
+        if (dimensioneAttesa > 0 && ottenuti != dimensioneAttesa) {
+            throw MegaException(
+                null,
+                "Il file è arrivato incompleto (${ottenuti / 1024} KB su " +
+                    "${dimensioneAttesa / 1024} KB). Riprova per continuare da qui."
+            )
         }
 
         destinazione.delete()
