@@ -1,13 +1,33 @@
-<?xml version="1.0" encoding="utf-8"?><!--
-   Sample backup rules file; uncomment and customize as necessary.
-   See https://developer.android.com/guide/topics/data/autobackup
-   for details.
-   Note: This file is ignored for devices older than API 31
-   See https://developer.android.com/about/versions/12/backup-restore
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Regole di Auto Backup per Android 11 e precedenti (API ≤ 30).
+    Da Android 12 in su comanda data_extraction_rules.xml: vanno tenuti
+    allineati, o il comportamento cambia a seconda del telefono.
+
+    **Non si salva niente**, ed è una scelta, non una dimenticanza. I template
+    di Android Studio arrivano vuoti, e un file di regole vuoto non vuol dire
+    "niente backup": vuol dire *tutto*. Con quello attivo, reinstallare l'app
+    non ripartiva pulito — Google rimetteva al suo posto le SharedPreferences e
+    con loro tornava un account creato settimane prima, senza le cartelle che
+    gli erano andate accanto.
+
+    Tre motivi per lasciarlo spento:
+
+    - `EncryptedSharedPreferences` (dove vive `appUid`) è cifrata con una
+      chiave del Keystore, che **non** viene ripristinata. Il file tornerebbe
+      indietro illeggibile: peggio che assente, perché sembra esserci.
+    - Le preferenze del cloud simulato tengono anche il segno "cartelle di
+      prova seminate". Ripristinarlo senza il database che lo accompagna
+      lascerebbe l'app convinta di aver già seminato, e vuota.
+    - Room è una copia locale ricostruibile: cartelle e tracce si riprendono
+      da MEGA, e presto da Firestore.
+
+    Quando ci sarà davvero qualcosa che merita di sopravvivere a un cambio di
+    telefono, si aggiunge qui un `<include>` mirato — mai togliendo gli
+    `<exclude>` in blocco.
 -->
 <full-backup-content>
-    <!--
-   <include domain="sharedpref" path="."/>
-   <exclude domain="sharedpref" path="device.xml"/>
--->
+    <exclude domain="sharedpref" path="." />
+    <exclude domain="database" path="." />
+    <exclude domain="file" path="." />
 </full-backup-content>

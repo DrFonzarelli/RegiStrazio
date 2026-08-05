@@ -1662,6 +1662,74 @@ qualcuno guarda lo schermo nel caso giusto.
 
 ---
 
+#### 27. Saltare a un commento non è ricominciare la traccia
+
+Il sintomo era intermittente e brutto: premendo il chip di un commento mentre
+la traccia già suonava, ogni tanto l'audio proseguiva per conto suo, il cursore
+si piantava, e una volta è comparso un `coroutine was cancelled` al posto di un
+messaggio vero.
+
+`riproduciDa` chiamava `avvia`, che è la strada lunga: butta il flusso, chiede
+a MEGA un **indirizzo nuovo**, ricarica tutto. Mezzo secondo per spostarsi di
+dieci, sulla funzione che è il motivo per cui l'app esiste. E `avvia` comincia
+con `playJob?.cancel()`: se il job precedente stava aspettando l'indirizzo, la
+cancellazione arrivava dentro il suo
+
+```kotlin
+catch (e: Exception) { fermaRiproduzione(); mostra(spiegaErroreDiRete(e)) }
+```
+
+che la scambiava per un guasto di rete e **spegneva la riproduzione appena
+partita**. Da qui l'intermittenza: con l'indirizzo già pronto la corsa non si
+apriva, ed è per questo che "dopo un po' di prove funzionava".
+
+*Fix, due parti:*
+
+1. Se il player ha già dentro quella traccia, saltare è un `seek` — niente
+   rete, niente job da cancellare, nessuna corsa.
+2. `CancellationException` va **rilanciata**, mai trattata come errore. In
+   Kotlin è una `Exception` come le altre e un `catch` largo se la mangia,
+   rompendo la cooperazione fra coroutine. `scaricaUna` lo faceva già giusto;
+   il player no.
+
+*Da ricordare:* ogni `catch (e: Exception)` attorno a codice sospendibile è un
+posto dove una cancellazione può travestirsi da guasto. Il danno non si vede
+dove sta il `catch` — si vede addosso all'operazione **successiva**, quella che
+ha causato la cancellazione e che si ritrova spenta da chi stava morendo.
+
+---
+
+#### 28. Un file di regole di backup vuoto vuol dire "salva tutto"
+
+Reinstallando l'app da zero ricompariva un account creato settimane prima, da
+solo, senza le cartelle che ai suoi tempi lo accompagnavano.
+
+Non era l'app: era **Auto Backup**. `backup_rules.xml` e
+`data_extraction_rules.xml` erano i template di Android Studio, cioè commenti e
+nient'altro — e un file di regole senza regole non disattiva il backup,
+**acconsente a tutto**. Google rimetteva a posto le SharedPreferences alla
+reinstallazione successiva.
+
+Tre ragioni per cui qui il backup fa più danni che comodo:
+
+- `EncryptedSharedPreferences` (dove vive `appUid`) è cifrata con una chiave
+  del **Keystore**, che non viene ripristinata. Il file torna indietro
+  illeggibile: peggio che assente, perché sembra esserci.
+- Il segno "cartelle di prova seminate" sta nelle preferenze, le cartelle in
+  Room. Ripristinare le prime senza le seconde lascia l'app convinta di aver
+  già seminato, e vuota.
+- Room è una copia ricostruibile: le cartelle si riprendono da MEGA.
+
+*Fix:* `<exclude>` esplicito su `sharedpref`, `database` e `file` in entrambi i
+file — e in `data_extraction_rules.xml` anche in `<device-transfer>`, non solo
+in `<cloud-backup>`: sono due strade diverse per gli stessi dati.
+
+*Da ricordare:* i due file valgono per versioni di Android diverse (≤30 e
+31+). Toccarne uno solo fa comportare l'app in un modo su un telefono e in un
+altro su quello accanto.
+
+---
+
 ### Trappole del progetto da tenere a mente
 
 **`google-services.json` non è nel repository, ed è voluto.** Sta solo in
@@ -1705,6 +1773,21 @@ risolte, non riprogettarle:
 - comparsa/scomparsa del mini player → logica `barraCollegata` in `AppRoot.kt`,
   che replica lo "scollegamento" del prototipo
 
+**Il tasto play ha tre stati, non due.** `inRiproduzione` è l'intenzione
+(play premuto), `audioAttivo` è il suono che esce davvero: fra i due c'è il
+tempo di chiedere l'indirizzo a MEGA e riempire il buffer. Il cerchio resta
+scarico e gira finché non parte il suono, e solo allora si riempie di accent.
+Chi aggiunge un comando di riproduzione deve guardare `audioAttivo`, non
+`inRiproduzione`, o tornerà a promettere un audio che non c'è. Nel mini player
+la distinzione non serve: lì la traccia è già caricata e play/pausa sono
+istantanei.
+
+**Scollegare una cartella spetta a chi l'ha collegata.** Non è un gesto
+locale: toglie la cartella a tutto il gruppo. Il foglio account elenca quindi
+solo le cartelle con `aggiuntoDa` uguale al proprio `appUid` — più quelle con
+`aggiuntoDa` vuoto, che nessuno rivendica e che nascondere renderebbe
+irremovibili.
+
 **La sort bar occupa l'indice 0 della lista.** Ogni volta che si converte la
 posizione di una traccia in indice della `LazyColumn` serve `+1`. Sbagliarlo non
 dà errore di compilazione: fa scrollare sulla traccia sbagliata.
@@ -1736,6 +1819,21 @@ Cose consapevolmente lasciate indietro, da affrontare quando conviene:
   aver configurato Firebase richiede di rigenerare `google-services.json`.
 - **`security-crypto` è una alpha.** `1.1.0-alpha06` regge l'identità utente,
   che è la cosa più delicata dell'app. Da tenere d'occhio.
+- **La durata si sa solo premendo play.** È la radice degli errori 26 e del
+  salto dei marker quando la scala si assesta: fino al primo play la posizione
+  dei commenti è una stima. Due strade per chiuderla davvero, in ordine di
+  costo: **(a)** stimarla dalla dimensione del file, che MEGA dà insieme
+  all'elenco — serve una colonna in più su `TracciaEntity`, e con
+  `fallbackToDestructiveMigration` attivo costa solo un bump di versione, ma
+  resta una stima, perché il bitrate non lo conosciamo; **(b)** scaricare i
+  primi kilobyte e leggere l'header audio — AES-CTR permette di decifrare un
+  intervallo qualsiasi, quindi è fattibile, e darebbe il numero **vero** senza
+  riprodurre niente. La (b) è la risposta giusta, la (a) un tampone.
+- **Il banco di prova dichiara ascolti e commenti ma non le durate**, e le due
+  cose non stanno insieme: se qualcuno ha commentato al minuto 2, quella
+  traccia l'ha ascoltata, e la sua durata sarebbe già su Firestore. Si chiude
+  scrivendo la durata nota accanto ai voti in `DatiDiProva`, che però va
+  misurata a mano una volta per traccia.
 
 ---
 

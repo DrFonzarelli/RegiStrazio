@@ -469,8 +469,47 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         playJob = viewModelScope.launch { seguiPosizione(tracciaId) }
     }
 
-    /** Salta a un punto e riparte: usato dai chip dei commenti e dal grafico dettagli. */
-    fun riproduciDa(tracciaId: String, secondi: Float) = avvia(tracciaId, secondi)
+    /**
+     * Salta a un punto e riparte: i chip dei commenti e il grafico dei dettagli.
+     *
+     * Se il player ha **già dentro** questa traccia, saltare è un `seek` e
+     * basta. Prima si ripassava sempre da [avvia], che butta via il flusso,
+     * richiede a MEGA un indirizzo nuovo e ricarica tutto da capo: mezzo
+     * secondo buono di attesa per spostarsi di dieci secondi, sulla funzione
+     * che è il motivo per cui l'app esiste.
+     *
+     * Ed era anche una corsa. [avvia] comincia cancellando il `playJob`
+     * precedente; se quello stava aspettando l'indirizzo da MEGA, la
+     * cancellazione risaliva fin dentro il suo `catch`, che la scambiava per
+     * un errore di rete e chiamava `fermaRiproduzione()` — spegnendo la
+     * riproduzione che era appena partita. Da fuori: l'audio va avanti, il
+     * cursore si pianta, e ogni tanto compare un "coroutine was cancelled".
+     */
+    fun riproduciDa(tracciaId: String, secondi: Float) {
+        val r = _state.value.riproduzione
+        if (r.tracciaId != tracciaId || tracciaCaricata != tracciaId) {
+            avvia(tracciaId, secondi)
+            return
+        }
+
+        val punto = secondi.coerceAtLeast(0f)
+        player.cerca(punto)
+        // Se era in pausa il seek non basta: va ripreso, e con lui il ciclo
+        // che riporta la posizione nello stato.
+        if (!r.inRiproduzione) {
+            player.riprendi()
+            playJob?.cancel()
+            playJob = viewModelScope.launch { seguiPosizione(tracciaId) }
+        }
+        _state.update {
+            it.copy(
+                riproduzione = it.riproduzione.copy(
+                    inRiproduzione = true,
+                    posizioneSecondi = punto
+                )
+            )
+        }
+    }
 
     /** Trascinamento del playhead: sposta senza cambiare stato play/pausa. */
     fun spostaCursore(tracciaId: String, secondi: Float) {
@@ -569,6 +608,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
             val url = try {
                 megaApi.urlDiDownload(link, traccia.idFileMega)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // Non è un errore: è un altro play che ha soppiantato questo.
+                // Trattarla come un guasto di rete spegnerebbe la riproduzione
+                // appena partita e mostrerebbe all'utente il testo interno di
+                // una cancellazione. Deve risalire e basta.
+                throw e
             } catch (e: Exception) {
                 fermaRiproduzione()
                 mostra(spiegaErroreDiRete(e))

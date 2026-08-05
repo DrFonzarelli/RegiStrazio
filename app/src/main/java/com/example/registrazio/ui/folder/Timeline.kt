@@ -121,6 +121,19 @@ fun Timeline(
             else -> commenti.maxOf { it.timestampSecondi }.coerceAtLeast(1f) * 1.15f
         }
 
+        // La stima e la durata vera possono essere molto lontane, e il momento
+        // in cui la seconda sostituisce la prima è il primo play: senza
+        // animazione tutti i marker si teletrasportano insieme, e sembra che si
+        // sia rotto qualcosa proprio mentre parte l'audio. Scivolando, la
+        // stessa correzione si legge per quello che è — la scala che si
+        // assesta. Solo per i marker: il cursore deve stare dove sta il suono,
+        // e a quel punto è comunque all'inizio.
+        val durataMarker by animateFloatAsState(
+            targetValue = durataSicura,
+            animationSpec = tween(450),
+            label = "scala"
+        )
+
         // .playhead — un rientro dell'1.1% per non farlo mai toccare il bordo
         val inset = 0.011f
         val frazionePos = (posizioneSecondi / durataSicura).coerceIn(0f, 1f)
@@ -204,7 +217,7 @@ fun Timeline(
         val giaVisti = remember { commenti.map { it.id }.toSet() }
 
         commenti.forEachIndexed { indice, commento ->
-            val frazione = (commento.timestampSecondi / durataSicura).coerceIn(0f, 1f)
+            val frazione = (commento.timestampSecondi / durataMarker).coerceIn(0f, 1f)
             MarkerCommento(
                 iniziale = commento.iniziale,
                 colore = colors.avatarFor(commento.iniziale),

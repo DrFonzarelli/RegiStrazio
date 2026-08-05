@@ -360,7 +360,14 @@ fun AppRoot(
             state.identita?.let { io ->
                 AccountSheet(
                     utente = io,
-                    cartelleCollegate = state.cartelle,
+                    // Solo le cartelle che hai collegato tu. Scollegare non è un
+                    // gesto locale: toglie la cartella a tutto il gruppo, quindi
+                    // spetta a chi l'ha portata. Quelle senza un proprietario
+                    // scritto restano elencate — nessuno le rivendica, e
+                    // nasconderle vorrebbe dire renderle irremovibili.
+                    cartelleCollegate = state.cartelle.filter {
+                        it.aggiuntoDa.isBlank() || it.aggiuntoDa == io.appUid
+                    },
                     onChiudi = { accountAperto = false },
                     onRimuoviCartella = vm::rimuoviCartella,
                     onSimulaReinstallazione = {

@@ -1,6 +1,10 @@
 package com.example.registrazio.ui.folder
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
@@ -39,6 +43,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
@@ -205,7 +210,7 @@ fun TrackCard(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(5.dp)
         ) {
-            PlayButton(inRiproduzione, azioni.onTogglePlay)
+            PlayButton(inRiproduzione, audioAttivo, azioni.onTogglePlay)
 
             Column(Modifier.weight(1f)) {
                 if (inRinomina) {
@@ -418,16 +423,51 @@ fun TrackCard(
     }
 }
 
-/** `.play-btn`: cerchio 38dp che diventa pieno accent mentre suona. */
+/**
+ * `.play-btn`: cerchio 38dp che diventa pieno accent mentre suona.
+ *
+ * Tre stati, non due. Fra il tocco e il primo suono c'è il tempo di chiedere
+ * l'indirizzo a MEGA e riempire il buffer — può essere un secondo abbondante —
+ * e mostrare subito la pausa colorata prometteva un audio che ancora non
+ * c'era: restava solo da fissare un tasto che diceva "sto suonando" nel
+ * silenzio. Il cerchio ora resta scarico e gira finché il suono non parte
+ * davvero, e solo allora si riempie.
+ *
+ * @param inRiproduzione play premuto — l'intenzione.
+ * @param audioAttivo il suono sta uscendo davvero. Fra i due c'è il caricamento.
+ */
 @Composable
-private fun PlayButton(inRiproduzione: Boolean, onClick: () -> Unit) {
+private fun PlayButton(
+    inRiproduzione: Boolean,
+    audioAttivo: Boolean,
+    onClick: () -> Unit
+) {
     val colors = AppTheme.colors
+    val inAttesa = inRiproduzione && !audioAttivo
+    val pieno = inRiproduzione && audioAttivo
+
+    val rotazione = if (inAttesa) {
+        val giro = rememberInfiniteTransition(label = "attesa")
+        giro.animateFloat(
+            initialValue = 0f,
+            targetValue = 360f,
+            animationSpec = infiniteRepeatable(tween(900, easing = LinearEasing)),
+            label = "giro"
+        ).value
+    } else {
+        0f
+    }
+
     Box(
         Modifier
             .size(38.dp)
             .clip(CircleShape)
-            .background(if (inRiproduzione) colors.accent else colors.surface)
-            .border(1.dp, if (inRiproduzione) colors.accent else colors.borderStrong, CircleShape)
+            .background(if (pieno) colors.accent else colors.surface)
+            .border(
+                1.dp,
+                if (inRiproduzione) colors.accent else colors.borderStrong,
+                CircleShape
+            )
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
@@ -435,11 +475,17 @@ private fun PlayButton(inRiproduzione: Boolean, onClick: () -> Unit) {
             ),
         contentAlignment = Alignment.Center
     ) {
-        AppIcon(
-            if (inRiproduzione) AppIcons.Pause else AppIcons.Play,
-            16.dp,
-            if (inRiproduzione) Color.White else colors.text
-        )
+        when {
+            inAttesa -> AppIcon(
+                AppIcons.Refresh,
+                15.dp,
+                colors.accent,
+                Modifier.rotate(rotazione)
+            )
+
+            pieno -> AppIcon(AppIcons.Pause, 16.dp, Color.White)
+            else -> AppIcon(AppIcons.Play, 16.dp, colors.text)
+        }
     }
 }
 
