@@ -1606,7 +1606,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 val traccia = tracce.getOrNull(finto.traccia - 1) ?: return@mapIndexedNotNull null
                 Commento(
                     // Deterministico: riseminando non si duplica niente.
-                    id = "prova-${cartella.id}-$i",
+                    id = "${DatiDiProva.PREFISSO_ID}${cartella.id}-$i",
                     tracciaId = traccia.id,
                     appUid = finto.autore.appUid,
                     autoreNome = finto.autore.nomeVisibile,

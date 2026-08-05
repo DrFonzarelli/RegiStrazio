@@ -1,6 +1,7 @@
 package com.example.registrazio.data.local
 
 import android.content.Context
+import com.example.registrazio.data.DatiDiProva
 import com.example.registrazio.data.local.db.ArchivioDb
 import com.example.registrazio.data.local.db.CartellaEntity
 import com.example.registrazio.data.local.db.CommentoEntity
@@ -100,8 +101,7 @@ class ArchivioLocale(context: Context) {
      * Rileggendo la cartella da MEGA, un file sparito da lì deve sparire anche
      * qui. I commenti restano: sono agganciati all'id della traccia, che è il
      * node handle di MEGA e non cambia.
-     */
-    /**
+     *
      * @param stato da forzare su tutte le righe. Lasciandolo `null` — il caso
      *   normale — ogni riga **conserva lo stato che aveva**, e passa a `LOCALE`
      *   solo se qualcosa è davvero cambiato.
@@ -238,9 +238,14 @@ class ArchivioLocale(context: Context) {
      */
     suspend fun rimuoviCommentiSpariti(idRimasti: Set<String>) {
         for (riga in dao.commenti()) {
-            if (riga.statoSync == StatoSync.SINCRONIZZATO && riga.id !in idRimasti) {
-                dao.cancellaCommentoSincronizzatoDavvero(riga.id)
-            }
+            if (riga.statoSync != StatoSync.SINCRONIZZATO) continue
+            if (riga.id in idRimasti) continue
+            // I commenti del banco di prova sono `SINCRONIZZATO` per non farsi
+            // caricare, non perché su Firestore ci siano. Senza questa riga il
+            // primo Sincronizza li scambierebbe per commenti cancellati da
+            // qualcun altro e smonterebbe il banco di prova.
+            if (riga.id.startsWith(DatiDiProva.PREFISSO_ID)) continue
+            dao.cancellaCommentoSincronizzatoDavvero(riga.id)
         }
     }
 

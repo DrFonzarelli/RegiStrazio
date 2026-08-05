@@ -2,6 +2,7 @@ package com.example.registrazio.data.remote
 
 import com.example.registrazio.data.model.Cartella
 import com.example.registrazio.data.model.Commento
+import com.example.registrazio.data.model.StatoSync
 import com.example.registrazio.data.model.Traccia
 import com.example.registrazio.data.model.Utente
 import com.example.registrazio.data.model.VotoStella
@@ -225,7 +226,7 @@ private fun DocumentSnapshot.aCommento(): Commento? {
         testo = testo,
         creatoIl = getLong("creatoIl") ?: 0L,
         // Arriva da Firestore, quindi su Firestore c'è già.
-        statoSync = com.example.registrazio.data.model.StatoSync.SINCRONIZZATO
+        statoSync = StatoSync.SINCRONIZZATO
     )
 }
 

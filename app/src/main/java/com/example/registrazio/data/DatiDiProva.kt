@@ -36,6 +36,17 @@ import com.example.registrazio.data.model.VotoStella
  */
 object DatiDiProva {
 
+    /**
+     * Prefisso degli id generati dal seme.
+     *
+     * Serve a riconoscerli dopo, e serve davvero: i commenti finti nascono
+     * `SINCRONIZZATO` per non farsi caricare, ma quello stato vuol dire anche
+     * "su Firestore c'è". Il pull, non trovandoli, li prenderebbe per commenti
+     * cancellati da qualcun altro e li spazzerebbe via al primo Sincronizza —
+     * il banco di prova si smonterebbe da solo appena collegato il cloud.
+     */
+    const val PREFISSO_ID = "prova-"
+
     /** Gli altri membri del gruppo immaginario. Il colore è una chiave di `PALETTE_KEYS`. */
     enum class Autore(val nomeVisibile: String, val colore: String) {
         MARCO("Marco", "m"),
@@ -43,7 +54,7 @@ object DatiDiProva {
         ALE("Ale", "a");
 
         /** Stabile fra un avvio e l'altro: i commenti di Marco restano di Marco. */
-        val appUid: String get() = "prova-${name.lowercase()}"
+        val appUid: String get() = PREFISSO_ID + name.lowercase()
     }
 
     /**
