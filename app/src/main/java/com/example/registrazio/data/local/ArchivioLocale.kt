@@ -101,14 +101,36 @@ class ArchivioLocale(context: Context) {
      * qui. I commenti restano: sono agganciati all'id della traccia, che è il
      * node handle di MEGA e non cambia.
      */
+    /**
+     * @param stato da forzare su tutte le righe. Lasciandolo `null` — il caso
+     *   normale — ogni riga **conserva lo stato che aveva**, e passa a `LOCALE`
+     *   solo se qualcosa è davvero cambiato.
+     *
+     * Quel dettaglio decide se il contatore dei pendenti torna a zero. Il tasto
+     * Sincronizza rilegge le cartelle da MEGA a ogni giro, e marcando tutto
+     * `LOCALE` si ritroverebbe l'intero catalogo da ricaricare ogni volta —
+     * lavoro creato dalla sincronizzazione stessa, che al giro dopo se lo
+     * ritrova davanti daccapo.
+     */
     suspend fun sostituisciTracce(
         cartellaId: String,
         tracce: List<Traccia>,
         chiavi: Map<String, MegaCrypto.ChiaveFile>,
-        stato: StatoSync = StatoSync.LOCALE
+        stato: StatoSync? = null
     ) {
+        val prima = dao.tracce().filter { it.cartellaId == cartellaId }.associateBy { it.id }
+        val nuove = tracce.map { traccia ->
+            if (stato != null) return@map traccia.aEntita(chiavi[traccia.id], stato)
+
+            val vecchia = prima[traccia.id]
+            // Costruita con lo stato di prima: se il confronto torna, allora
+            // *solo* lo stato sarebbe cambiato, cioè non è cambiato niente.
+            val candidata = traccia.aEntita(chiavi[traccia.id], vecchia?.statoSync ?: StatoSync.LOCALE)
+            if (vecchia != null && candidata == vecchia) candidata
+            else candidata.copy(statoSync = StatoSync.LOCALE)
+        }
         dao.cancellaTracceDi(cartellaId)
-        dao.salvaTracce(tracce.map { it.aEntita(chiavi[it.id], stato) })
+        dao.salvaTracce(nuove)
     }
 
     suspend fun salvaTraccia(traccia: Traccia, chiave: MegaCrypto.ChiaveFile?) {
@@ -140,6 +162,88 @@ class ArchivioLocale(context: Context) {
         dao.cancellaCartellaMaiCaricata(id)
     }
 
+    // ---------- sincronizzazione ----------
+
+    suspend fun cartelleDaCaricare(): List<Cartella> = dao.cartelleDaCaricare().map { it.aModello() }
+
+    suspend fun tracceDaCaricare(): List<Traccia> = dao.tracceDaCaricare().map { it.aModello(emptyList()) }
+
+    suspend fun commentiDaCaricare(): List<Commento> = dao.commentiDaCaricare().map { it.aModello() }
+
+    suspend fun cartelleDaCancellare(): List<String> = dao.cartelleDaCancellare().map { it.id }
+
+    /** Id commento e id della traccia che lo ospita: su Firestore serve il percorso intero. */
+    suspend fun commentiDaCancellare(): List<Pair<String, String>> =
+        dao.commentiDaCancellare().map { it.tracciaId to it.id }
+
+    suspend fun segnaCartellaCaricata(id: String) = dao.segnaCartella(id, StatoSync.SINCRONIZZATO)
+
+    suspend fun segnaTracciaCaricata(id: String) = dao.segnaTraccia(id, StatoSync.SINCRONIZZATO)
+
+    suspend fun segnaCommentoCaricato(id: String) = dao.segnaCommento(id, StatoSync.SINCRONIZZATO)
+
+    suspend fun segnaCartellaFallita(id: String) = dao.segnaCartella(id, StatoSync.ERRORE)
+
+    suspend fun segnaTracciaFallita(id: String) = dao.segnaTraccia(id, StatoSync.ERRORE)
+
+    suspend fun segnaCommentoFallito(id: String) = dao.segnaCommento(id, StatoSync.ERRORE)
+
+    suspend fun dimenticaCartella(id: String) = dao.cancellaCartellaSincronizzata(id)
+
+    suspend fun dimenticaCommento(id: String) = dao.cancellaCommentoSincronizzato(id)
+
+    /**
+     * Scrive una cartella arrivata da Firestore, **se qui non è stata toccata**.
+     *
+     * È la regola che tiene in piedi la seconda legge del progetto: il telefono
+     * è la fonte di verità. Una riga in `LOCALE`, `ERRORE` o `DA_ELIMINARE`
+     * porta un lavoro che non è ancora arrivato dall'altra parte, e lasciarla
+     * sovrascrivere dal pull vorrebbe dire buttarlo — proprio nel momento in
+     * cui l'utente ha chiesto di salvarlo.
+     *
+     * @return `true` se la riga è stata scritta.
+     */
+    suspend fun accettaDalCloud(cartella: Cartella): Boolean {
+        if (dao.statoCartella(cartella.id).haLavoroInSospeso()) return false
+        dao.salvaCartella(cartella.aEntita(StatoSync.SINCRONIZZATO))
+        return true
+    }
+
+    /**
+     * Come sopra per una traccia, con un'eccezione: [Traccia.mioVoto] non passa
+     * da Firestore. È la stella di *questo* telefono, e il documento remoto non
+     * la conosce nemmeno — sovrascriverla con il valore vuoto che arriva dal
+     * cloud la cancellerebbe a ogni sincronizzazione.
+     */
+    suspend fun accettaDalCloud(traccia: Traccia, chiave: MegaCrypto.ChiaveFile?): Boolean {
+        if (dao.statoTraccia(traccia.id).haLavoroInSospeso()) return false
+        val voto = dao.mioVoto(traccia.id) ?: traccia.mioVoto
+        dao.salvaTraccia(traccia.copy(mioVoto = voto).aEntita(chiave, StatoSync.SINCRONIZZATO))
+        return true
+    }
+
+    suspend fun accettaDalCloud(commento: Commento): Boolean {
+        if (dao.statoCommento(commento.id).haLavoroInSospeso()) return false
+        dao.salvaCommento(commento.copy(statoSync = StatoSync.SINCRONIZZATO).aEntita())
+        return true
+    }
+
+    /**
+     * Toglie ciò che su Firestore non c'è più.
+     *
+     * Solo fra le righe già sincronizzate: una in `LOCALE` non è "sparita dal
+     * cloud", non ci è mai arrivata, e cancellarla vorrebbe dire perdere un
+     * commento appena scritto perché la sincronizzazione non l'ha ancora
+     * caricato.
+     */
+    suspend fun rimuoviCommentiSpariti(idRimasti: Set<String>) {
+        for (riga in dao.commenti()) {
+            if (riga.statoSync == StatoSync.SINCRONIZZATO && riga.id !in idRimasti) {
+                dao.cancellaCommentoSincronizzatoDavvero(riga.id)
+            }
+        }
+    }
+
     /** Strumento di test del foglio account. */
     suspend fun svuota() {
         for (riga in dao.download()) File(riga.percorso).delete()
@@ -148,6 +252,17 @@ class ArchivioLocale(context: Context) {
         dao.svuotaTracce()
         dao.svuotaCartelle()
     }
+}
+
+/**
+ * La riga porta un lavoro che Firestore non ha ancora visto.
+ *
+ * `null` vuol dire che la riga non c'è: quello che arriva dal cloud è nuovo e
+ * si scrive senza pensarci.
+ */
+private fun StatoSync?.haLavoroInSospeso(): Boolean = when (this) {
+    null, StatoSync.SINCRONIZZATO -> false
+    StatoSync.LOCALE, StatoSync.ERRORE, StatoSync.DA_ELIMINARE -> true
 }
 
 // ---------- conversioni ----------

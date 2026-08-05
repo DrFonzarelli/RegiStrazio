@@ -177,7 +177,8 @@ fun AppRoot(
                     onIndietro = vm::tornaHome,
                     onCambiaTema = vm::cambiaTema,
                     onAggiorna = vm::aggiorna,
-                    mostraAggiorna = !gate
+                    mostraAggiorna = !gate,
+                    sincronizzando = state.sincronizzazioneInCorso
                 )
 
                 val padding = PaddingValues(

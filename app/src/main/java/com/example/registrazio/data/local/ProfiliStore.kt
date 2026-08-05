@@ -6,12 +6,16 @@ import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 
 /**
- * Sostituto temporaneo di Firestore per l'elenco dei profili del gruppo.
+ * L'ultima copia nota dei profili del gruppo.
  *
- * Il prototipo li tiene in `localStorage` sotto la chiave `prove_cloud_v2`,
- * proprio per poter provare il recupero account dopo una reinstallazione.
- * Qui facciamo lo stesso con SharedPreferences: quando `FirestoreRepository`
- * sarà collegato, questa classe sparisce e le firme restano identiche.
+ * Nata come sostituto di Firestore, ora che Firestore c'è ha cambiato mestiere
+ * senza cambiare una riga: è la **cache** dell'elenco remoto. Il Gate la mostra
+ * subito e poi la sostituisce con quella vera appena la rete risponde.
+ *
+ * Non è un doppione inutile. Chi ha appena reinstallato apre l'app sul Gate e
+ * deve riconoscersi in quella lista: aspettare la rete gliela lascerebbe vuota
+ * nel momento peggiore, e senza linea vuota resterebbe — cioè un account
+ * irrecuperabile finché non torna il segnale.
  */
 class ProfiliStore(context: Context) {
 

@@ -74,6 +74,11 @@ dependencies {
 
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.1")
+    // `Task.await()`: le API Firebase restituiscono Task, non funzioni
+    // sospendibili. Senza questo modulo ogni chiamata andrebbe incartata a mano
+    // in una `suspendCancellableCoroutine`, una volta per chiamata. Stessa
+    // versione delle coroutines, o si tirano dietro due copie del runtime.
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.1")
 
     // Firebase — dalla BOM 34 gli artefatti "-ktx" non esistono più:
     // le estensioni Kotlin sono dentro ai moduli principali.

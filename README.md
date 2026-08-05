@@ -792,7 +792,7 @@ service cloud.firestore {
     match /tracce/{tracciaId}/commenti/{commentoId} {
       allow create: if request.auth != null;
       allow delete: if request.auth != null;  // owner check lato app
-      allow update: if false;                 // i commenti non si modificano
+      allow update: if request.auth != null;  // vedi nota
     }
   }
 }
@@ -800,6 +800,15 @@ service cloud.firestore {
 
 > Regole volutamente permissive per un gruppo di 5 persone di fiducia.
 > Non adatte a un'app pubblica.
+
+> **`update` era a `false`, e sarebbe stato un guaio.** La riga diceva "i
+> commenti non si modificano", ma l'app un commento lo lascia modificare
+> eccome — c'è `modificaCommento`, e il riquadro per farlo sta nella card. Con
+> la regola originale la modifica sarebbe stata accettata in locale e rifiutata
+> da Firestore alla sincronizzazione: il commento corretto sul proprio telefono,
+> quello vecchio su quello di tutti gli altri, e nessun errore visibile finché
+> qualcuno non avesse confrontato i due schermi. Le regole descrivono cosa fa
+> l'app, non cosa avevamo immaginato che facesse.
 
 ---
 
@@ -1030,11 +1039,11 @@ perché la BOM non le mostra): Firestore `26.5.0`, Auth `24.2.0`.
 | Nome della cartella letto da MEGA | ✅ | risolto provando tutti i nodi non-file, vedi errore 7 |
 | Waveform | 🟡 | equalizzatore animato decorativo, nessun dato reale |
 | Archivio locale (Room) | ✅ | **provato**: commenti, stelle e rinomine sopravvivono alla chiusura |
-| Elenco profili per il recupero account | 🟡 | `ProfiliStore` = SharedPreferences + Gson, unico resto del cloud simulato |
-| Firestore | ❌ | dipendenza presente, **mai importata** nel codice |
-| Firebase Anonymous Auth | ❌ | mai inizializzata |
+| Elenco profili per il recupero account | 🟡 | da Firestore, con `ProfiliStore` come cache locale per il Gate offline: **da provare** |
+| Firestore | 🟡 | `FirestoreRepository` legge e scrive tutte e quattro le collection: **scritto, mai eseguito** |
+| Firebase Anonymous Auth | 🟡 | `assicuraAccesso()` prima di ogni giro: **da provare** |
 | MEGA HTTP API + crypto | ✅ | elenco, decifratura e scarico dei byte **verificati sul campo** |
-| Tasto Sincronizza | ❌ | |
+| Tasto Sincronizza | 🟡 | MEGA + pull + push + cancellazioni, con l'icona che gira: **tutto da provare** |
 | Banner offline | ❌ | c'è il messaggio al gesto che fallisce, non il banner permanente |
 | Riproduzione in background + notifica | 🟡 | `MediaSessionService` vero: **compila, tutto da provare sul telefono** |
 | Commento dalla notifica | 🟡 | schermatina col lucchetto, minutaggio congelato all'apertura: **da provare** |
@@ -1888,6 +1897,67 @@ le due strade si vedono a vicenda.
 *Da ricordare:* quando due strade portano alla stessa operazione, una guardia
 su una sola delle due non è mezza protezione — è protezione in una direzione
 sola, che è il modo migliore per crederla completa.
+
+---
+
+### Come funziona la sincronizzazione
+
+`SyncManager.sincronizza()` fa quattro cose, e l'ordine non è arbitrario:
+
+1. **MEGA** — rilegge ogni cartella collegata, per scoprire i file nuovi.
+2. **Pull** — si prende quello che hanno scritto gli altri.
+3. **Push** — manda quello che è stato scritto qui.
+4. **Cancellazioni** — propaga quello che è stato tolto qui.
+
+**MEGA per primo**, e qui c'era una trappola. Rileggere una cartella scrive in
+Room le tracce nuove come `LOCALE`, cioè da caricare: mettendolo dopo il push,
+quelle tracce sarebbero rimaste in coda fino al giro successivo, che a sua
+volta ne avrebbe create altre. Il contatore non sarebbe mai tornato a zero, e
+il lavoro da fare sarebbe stato creato dalla sincronizzazione stessa.
+
+Per lo stesso motivo `sostituisciTracce` **conserva lo stato delle righe
+invariate**: rileggere una cartella senza novità non deve marcare da caricare
+cinquanta tracce identiche a quelle già su Firestore. Confronta la riga nuova
+costruita *con lo stato vecchio* e, se coincide, non è cambiato niente.
+
+**Il pull non sovrascrive mai il lavoro locale.** Una riga in `LOCALE`,
+`ERRORE` o `DA_ELIMINARE` porta qualcosa che il cloud non ha ancora visto:
+accettare la versione remota vorrebbe dire buttarla via proprio nel momento in
+cui l'utente ha chiesto di salvarla. La regola vive in
+`ArchivioLocale.accettaDalCloud` ed è la seconda legge del progetto.
+
+**Due cose non passano da Firestore, ed è voluto:**
+
+- **`mioVoto`** — la stella è di questo telefono. Il documento remoto porta solo
+  i contatori di gruppo (`votiPieni`, `votiMezzi`); scrivere anche il voto
+  personale lo renderebbe quello di tutti. Al pull, `accettaDalCloud` rilegge
+  il voto locale e lo rimette al suo posto — senza, ogni sincronizzazione
+  cancellerebbe le stelline.
+- **Le chiavi AES** dei file MEGA. Su Firestore va `idFileMega`, mai la chiave.
+
+**L'identità è `appUid`, non l'UID di Anonymous Auth.** Quello cambia a ogni
+reinstallazione, e usarlo come chiave vorrebbe dire perdere i propri commenti
+reinstallando. Anonymous Auth serve solo a far passare le regole, che chiedono
+"un utente autenticato qualsiasi".
+
+**Il Gate legge i profili da Firestore ma parte dalla cache.** `ProfiliStore`
+non è più il cloud simulato: è l'ultima copia nota dell'elenco. Chi ha appena
+reinstallato apre l'app sul Gate e deve riconoscersi in quella lista —
+aspettare la rete gliela lascerebbe vuota nel momento peggiore, e senza linea
+vuota resterebbe.
+
+**Limiti noti di questo primo giro:**
+
+- Scollegando una cartella, le sue **tracce restano su Firestore**. Sparisce il
+  documento cartella e spariscono le righe locali, ma i documenti `tracce/` con
+  quel `cartellaId` no. Non danno fastidio — senza la cartella nessuno li
+  guarda — e ricollegandola tornano al loro posto, ma sono spazzatura che prima
+  o poi va raccolta.
+- Il pull **non cancella le tracce sparite dal cloud**, solo i commenti. Una
+  traccia tolta da un altro membro resta visibile qui finché non si rilegge la
+  cartella da MEGA.
+- Nessun `listener` in tempo reale: è una scelta della v1, i commenti non si
+  aggiornano da soli mentre l'app è aperta.
 
 ---
 

@@ -1,6 +1,10 @@
 package com.example.registrazio.ui.components
 
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -58,17 +62,31 @@ fun AppTopBar(
     onCambiaTema: () -> Unit,
     onAggiorna: () -> Unit,
     modifier: Modifier = Modifier,
-    mostraAggiorna: Boolean = true
+    mostraAggiorna: Boolean = true,
+    /** Un giro di sincronizzazione è in corso: l'icona gira finché non finisce. */
+    sincronizzando: Boolean = false
 ) {
     val colors = AppTheme.colors
 
     // Ogni tap fa compiere all'icona un giro completo, come `.refresh-spin`.
     var giri by remember { mutableIntStateOf(0) }
-    val rotazione by animateFloatAsState(
+    val perTap by animateFloatAsState(
         targetValue = giri * 360f,
         animationSpec = tween(500),
         label = "refresh"
     )
+
+    // Mentre la sincronizzazione lavora l'icona gira senza fermarsi: il giro
+    // singolo del tap dura mezzo secondo, e una sincronizzazione vera ne dura
+    // parecchi di più — l'icona tornerebbe ferma su un lavoro ancora in corso.
+    val continuo = rememberInfiniteTransition(label = "sync")
+    val rotazioneContinua by continuo.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(tween(900, easing = LinearEasing)),
+        label = "giroSync"
+    )
+    val rotazione = if (sincronizzando) rotazioneContinua else perTap
 
     Row(
         modifier
@@ -135,8 +153,9 @@ fun AppTopBar(
         if (mostraAggiorna) {
             AppIconButton(
                 icon = AppIcons.Refresh,
-                contentDescription = "Aggiorna",
+                contentDescription = if (sincronizzando) "Sincronizzazione in corso" else "Sincronizza",
                 onClick = { giri++; onAggiorna() },
+                tint = if (sincronizzando) colors.accent else AppTheme.colors.textSecondary,
                 modifier = Modifier.rotate(rotazione)
             )
         }

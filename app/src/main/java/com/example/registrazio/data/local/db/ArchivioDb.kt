@@ -8,6 +8,8 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 import androidx.room.Upsert
+import com.example.registrazio.data.model.StatoSync
+import com.example.registrazio.data.model.VotoStella
 
 @Dao
 interface ArchivioDao {
@@ -77,6 +79,70 @@ interface ArchivioDao {
     suspend fun cancellaCommentiDi(cartellaId: String)
 
     // ---------- sincronizzazione ----------
+    //
+    // "Da caricare" è `LOCALE` o `ERRORE`: la prima è una riga scritta o
+    // ritoccata qui, la seconda una che ci ha già provato e non ce l'ha fatta.
+    // `DA_ELIMINARE` viaggia a parte perché non si carica, si cancella.
+
+    @Query("SELECT * FROM cartelle WHERE statoSync IN ('LOCALE', 'ERRORE')")
+    suspend fun cartelleDaCaricare(): List<CartellaEntity>
+
+    @Query("SELECT * FROM tracce WHERE statoSync IN ('LOCALE', 'ERRORE')")
+    suspend fun tracceDaCaricare(): List<TracciaEntity>
+
+    @Query("SELECT * FROM commenti WHERE statoSync IN ('LOCALE', 'ERRORE')")
+    suspend fun commentiDaCaricare(): List<CommentoEntity>
+
+    @Query("SELECT * FROM cartelle WHERE statoSync = 'DA_ELIMINARE'")
+    suspend fun cartelleDaCancellare(): List<CartellaEntity>
+
+    @Query("SELECT * FROM commenti WHERE statoSync = 'DA_ELIMINARE'")
+    suspend fun commentiDaCancellare(): List<CommentoEntity>
+
+    @Query("UPDATE cartelle SET statoSync = :stato WHERE id = :id")
+    suspend fun segnaCartella(id: String, stato: StatoSync)
+
+    @Query("UPDATE tracce SET statoSync = :stato WHERE id = :id")
+    suspend fun segnaTraccia(id: String, stato: StatoSync)
+
+    @Query("UPDATE commenti SET statoSync = :stato WHERE id = :id")
+    suspend fun segnaCommento(id: String, stato: StatoSync)
+
+    /** Dopo la cancellazione su Firestore la riga non serve più a nessuno. */
+    @Query("DELETE FROM cartelle WHERE id = :id AND statoSync = 'DA_ELIMINARE'")
+    suspend fun cancellaCartellaSincronizzata(id: String)
+
+    @Query("DELETE FROM commenti WHERE id = :id AND statoSync = 'DA_ELIMINARE'")
+    suspend fun cancellaCommentoSincronizzato(id: String)
+
+    /**
+     * Toglie un commento che su Firestore non c'è più.
+     *
+     * Diverso da [cancellaCommentoSincronizzato], che chiude il giro di una
+     * cancellazione partita da qui: questo esegue quella di qualcun altro, e
+     * per questo pretende che la riga sia in pari col cloud — se fosse
+     * `LOCALE` non sarebbe "sparita", non ci sarebbe mai arrivata.
+     */
+    @Query("DELETE FROM commenti WHERE id = :id AND statoSync = 'SINCRONIZZATO'")
+    suspend fun cancellaCommentoSincronizzatoDavvero(id: String)
+
+    /**
+     * Lo stato di una riga, per sapere se il pull può sovrascriverla.
+     *
+     * `null` quando la riga non c'è: quello che arriva da Firestore è nuovo.
+     */
+    @Query("SELECT statoSync FROM cartelle WHERE id = :id")
+    suspend fun statoCartella(id: String): StatoSync?
+
+    @Query("SELECT statoSync FROM tracce WHERE id = :id")
+    suspend fun statoTraccia(id: String): StatoSync?
+
+    @Query("SELECT statoSync FROM commenti WHERE id = :id")
+    suspend fun statoCommento(id: String): StatoSync?
+
+    /** Il voto personale non passa da Firestore: sopravvive a ogni pull. */
+    @Query("SELECT mioVoto FROM tracce WHERE id = :id")
+    suspend fun mioVoto(id: String): VotoStella?
 
     @Query("SELECT COUNT(*) FROM commenti WHERE statoSync IN ('LOCALE', 'DA_ELIMINARE', 'ERRORE')")
     suspend fun commentiDaSincronizzare(): Int

@@ -11,6 +11,7 @@ import com.example.registrazio.data.local.ProfiliStore
 import com.example.registrazio.data.local.db.ConteggioPendenti
 import com.example.registrazio.data.remote.EsitoElenco
 import com.example.registrazio.data.remote.LinkMega
+import com.example.registrazio.data.remote.FirestoreRepository
 import com.example.registrazio.data.remote.MegaApi
 import com.example.registrazio.data.remote.MegaException
 import com.example.registrazio.data.remote.ScaricatoreMega
@@ -21,6 +22,8 @@ import com.example.registrazio.data.model.Traccia
 import com.example.registrazio.data.model.Utente
 import androidx.media3.common.util.UnstableApi
 import com.example.registrazio.data.remote.MegaCrypto
+import com.example.registrazio.domain.EsitoSync
+import com.example.registrazio.domain.SyncManager
 import com.example.registrazio.domain.identity.IdentityManager
 import com.example.registrazio.domain.player.CommentiDaFuori
 import com.example.registrazio.domain.player.PlayerCondiviso
@@ -89,6 +92,8 @@ data class AppState(
     val collegamento: StatoCollegamento = StatoCollegamento(),
     /** Quante righe aspettano di finire su Firestore: è il badge del tasto Sincronizza. */
     val pendenti: ConteggioPendenti = ConteggioPendenti(0, 0, 0),
+    /** Il giro di sincronizzazione è in corso: l'icona in topbar gira. */
+    val sincronizzazioneInCorso: Boolean = false,
     /**
      * Avanzamento dei download, da 0 a 1, per id traccia.
      *
@@ -187,6 +192,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val profiliStore = ProfiliStore(app)
     private val datiDiProva = DatiDiProvaStore(app)
     private val archivio = ArchivioLocale(app)
+    private val firestore = FirestoreRepository()
+    private val sync = SyncManager(archivio, firestore)
     private val megaApi = MegaApi()
     private val scaricatore = ScaricatoreMega(megaApi)
 
@@ -309,6 +316,26 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             // già, o riscriverebbe sopra il lavoro fatto sulle stesse cartelle.
             seminaDatiDiProva()
         }
+
+        aggiornaProfiliDalCloud()
+    }
+
+    /**
+     * L'elenco per "Ho già un account", preso da Firestore.
+     *
+     * Parte da quello in cache — [ProfiliStore] — che è immediato e funziona
+     * senza linea, e lo sostituisce con quello vero appena arriva. Aspettare la
+     * rete lascerebbe il Gate con una lista vuota proprio a chi ha appena
+     * reinstallato e sta cercando sé stesso; e senza linea resterebbe vuota per
+     * sempre, cioè irrecuperabile.
+     */
+    private fun aggiornaProfiliDalCloud() {
+        viewModelScope.launch {
+            val remoti = runCatching { sync.profili() }.getOrNull() ?: return@launch
+            if (remoti.isEmpty()) return@launch
+            remoti.forEach { profiliStore.registraProfilo(it) }
+            _state.update { it.copy(profiliDisponibili = profiliStore.profili()) }
+        }
     }
 
     /**
@@ -367,6 +394,16 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 profiliDisponibili = profiliStore.profili(),
                 schermata = Schermata.Home
             )
+        }
+        // Su Firestore appena si può, senza far aspettare il Gate: l'account
+        // esiste già sul telefono, e se la rete manca il profilo parte al primo
+        // Sincronizza. Bloccare qui vorrebbe dire non poter creare un account
+        // senza linea, che è esattamente quando serve poterlo fare.
+        viewModelScope.launch {
+            runCatching {
+                firestore.assicuraAccesso()
+                firestore.salvaProfilo(utente)
+            }
         }
         mostra("Benvenuto, ${utente.nome}!")
         riprendiCondivisioneInAttesa()
@@ -465,18 +502,88 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * mostrato spezzato per tipo — "7 modifiche" faceva pensare a un numero di
      * gesti, che non è quello che verrà caricato.
      */
+    /**
+     * Il tasto Sincronizza: rilettura di MEGA, poi pull da Firestore, poi push.
+     *
+     * MEGA **per primo**, e non è un dettaglio di comodo. Rileggere una cartella
+     * scrive in Room le tracce nuove in stato `LOCALE`, cioè da caricare: se
+     * arrivasse dopo il push, quelle tracce resterebbero in coda fino alla
+     * sincronizzazione successiva, e il contatore non tornerebbe mai a zero — a
+     * ogni giro ne troverebbe di fresche appena create dal giro stesso.
+     * Facendolo prima, tutto quello che MEGA ha da dire parte nello stesso giro.
+     */
     fun aggiorna() {
-        val p = _state.value.pendenti
-        if (!p.ceNeSono) {
-            mostra("Tutto sincronizzato")
-            return
+        if (sincronizzando) return
+        sincronizzando = true
+        _state.update { it.copy(sincronizzazioneInCorso = true) }
+
+        viewModelScope.launch {
+            val esito = runCatching {
+                rileggiCartelleDaMega()
+                sync.sincronizza(_state.value.identita, chiaviFile)
+            }
+
+            esito.onSuccess { risultato ->
+                ricaricaDaArchivio()
+                mostra(riassunto(risultato))
+            }
+            esito.onFailure { errore ->
+                // Room non è stato toccato: quello che c'era è ancora lì, e al
+                // prossimo tentativo si riparte da dove eravamo.
+                mostra(spiegaErroreDiRete(errore))
+            }
+
+            sincronizzando = false
+            _state.update { it.copy(sincronizzazioneInCorso = false) }
         }
+    }
+
+    private fun riassunto(esito: EsitoSync): String {
         val pezzi = buildList {
-            if (p.cartelle > 0) add("${p.cartelle} " + if (p.cartelle == 1) "cartella" else "cartelle")
-            if (p.tracce > 0) add("${p.tracce} " + if (p.tracce == 1) "traccia" else "tracce")
-            if (p.commenti > 0) add("${p.commenti} " + if (p.commenti == 1) "commento" else "commenti")
+            if (esito.caricati > 0) add("${esito.caricati} caricati")
+            if (esito.scaricati > 0) add("${esito.scaricati} ricevuti")
+            if (esito.falliti > 0) add("${esito.falliti} non riusciti")
         }
-        mostra("Da sincronizzare: " + pezzi.joinToString(", "))
+        return if (pezzi.isEmpty()) "Già tutto sincronizzato" else pezzi.joinToString(" · ")
+    }
+
+    /**
+     * Ricontrolla su MEGA il contenuto di ogni cartella collegata.
+     *
+     * Un fallimento non ferma il giro: una cartella il cui link è scaduto non
+     * deve impedire alle altre di aggiornarsi, e il messaggio l'ha già dato la
+     * sincronizzazione.
+     */
+    private suspend fun rileggiCartelleDaMega() {
+        for (cartella in _state.value.cartelle) {
+            val linkMega = LinkMega.parse(cartella.linkMega) ?: continue
+            val risultato = runCatching { megaApi.elencaFileAudio(linkMega) }.getOrNull() ?: continue
+            if (risultato.audio.isEmpty()) continue
+
+            val (aggiornata, tracce) = costruisciDaMega(
+                link = cartella.linkMega,
+                linkMega = linkMega,
+                risultato = risultato,
+                aggiuntoDa = cartella.aggiuntoDa
+            )
+            _state.update { stato ->
+                stato.copy(
+                    cartelle = stato.cartelle.map { if (it.id == aggiornata.id) aggiornata else it },
+                    tracce = stato.tracce.filterNot { it.cartellaId == aggiornata.id } + tracce
+                )
+            }
+            archivio.sostituisciTracce(aggiornata.id, tracce, chiaviFile)
+        }
+    }
+
+    /** Rilegge tutto dall'archivio: dopo un sync la verità sta lì, non in memoria. */
+    private suspend fun ricaricaDaArchivio() {
+        val cartelle = archivio.cartelle()
+        val tracce = archivio.tracce()
+        chiaviFile.putAll(archivio.chiaviFile())
+        _state.update {
+            it.copy(cartelle = cartelle, tracce = tracce, pendenti = archivio.pendenti())
+        }
     }
 
     // ---------- riproduzione ----------
@@ -988,6 +1095,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Il ciclo che smaltisce la coda. Ce n'è al massimo uno. */
     private var workerCoda: Job? = null
+
+    /** Un giro di sincronizzazione alla volta: due insieme si pesterebbero i piedi. */
+    private var sincronizzando = false
 
     /**
      * Il tasto download della traccia. Cinque significati, uno per stato.
