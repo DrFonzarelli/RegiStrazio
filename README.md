@@ -1135,6 +1135,14 @@ ricostruisce da codice, quindi buttare tutto e riseminare dà lo stesso
 risultato di una cancellazione selettiva senza uno stato in più da tenere
 allineato e da sbagliare.
 
+> **Il reset cancella solo questo telefono, mai Firestore.** È deliberato:
+> quel database è del gruppo, e un tasto di prova che lo svuotasse
+> cancellerebbe i commenti di altre quattro persone senza chiedere niente a
+> nessuno. Da aspettarsi quindi che profili e commenti già sincronizzati
+> **ritornino** al primo Sincronizza dopo il reset — non è un reset mancato, è
+> il cloud che fa il suo mestiere. Per svuotare davvero il database si passa
+> dalla console Firebase, a mano e guardando cosa si cancella.
+
 > **I link contengono la chiave.** La parte dopo il `#` decifra la cartella:
 > chi legge il sorgente può scaricarne l'audio, e il repository è pubblico. È
 > una scelta consapevole per questa fase. Quando quelle cartelle non serviranno

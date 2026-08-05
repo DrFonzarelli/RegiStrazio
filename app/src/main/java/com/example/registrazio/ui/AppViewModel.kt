@@ -1744,6 +1744,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * seme", ed è il punto: il seme si ricostruisce da codice, quindi
      * cancellare tutto e riseminare dà lo stesso risultato di una cancellazione
      * selettiva, senza uno stato in più da tenere allineato.
+     *
+     * **Cancella solo questo telefono.** Su Firestore non tocca niente, ed è
+     * deliberato: quel database è del gruppo, e un tasto di prova che lo
+     * svuotasse cancellerebbe i commenti di altre quattro persone senza
+     * chiedere niente a nessuno. Conseguenza da aspettarsi: profili e commenti
+     * già sincronizzati **ritornano** al primo Sincronizza dopo il reset. Non
+     * è un reset mancato, è il cloud che fa il suo mestiere.
      */
     fun svuotaCloudSimulato() {
         profiliStore.svuota()
