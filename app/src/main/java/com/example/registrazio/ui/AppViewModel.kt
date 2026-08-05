@@ -1,6 +1,7 @@
 package com.example.registrazio.ui
 
 import android.app.Application
+import android.util.Log
 import androidx.annotation.OptIn
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -399,10 +400,20 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         // esiste già sul telefono, e se la rete manca il profilo parte al primo
         // Sincronizza. Bloccare qui vorrebbe dire non poter creare un account
         // senza linea, che è esattamente quando serve poterlo fare.
+        //
+        // Il fallimento però si **dice**. La prima versione aveva un
+        // `runCatching` muto: senza linea andava bene, ma con Firestore
+        // configurato male l'account non arrivava mai e non c'era niente da
+        // nessuna parte che lo facesse sospettare — né un messaggio, né una
+        // riga di log. Un errore che non si vede costa più di quanto sarebbe
+        // costato mostrarlo.
         viewModelScope.launch {
             runCatching {
                 firestore.assicuraAccesso()
                 firestore.salvaProfilo(utente)
+            }.onFailure { errore ->
+                Log.w(TAG, "profilo non caricato su Firestore", errore)
+                if (!senzaRete(errore)) mostra(spiegaErroreFirebase(errore))
             }
         }
         mostra("Benvenuto, ${utente.nome}!")
@@ -1351,7 +1362,34 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private fun spiegaErroreDiRete(e: Throwable): String = when {
         senzaRete(e) -> SENZA_RETE
         e is MegaException -> e.message ?: "MEGA non risponde."
-        else -> e.message?.takeIf { it.isNotBlank() } ?: "Qualcosa è andato storto."
+        else -> spiegaErroreFirebase(e)
+    }
+
+    /**
+     * I due modi in cui Firebase dice "non sei configurato", tradotti.
+     *
+     * Sono errori di **console**, non di codice, e il messaggio originale non
+     * aiuta: `PERMISSION_DENIED` e `CONFIGURATION_NOT_FOUND` non dicono a
+     * nessuno quale interruttore cercare. Capitano una volta sola, al primo
+     * collegamento, e sono esattamente il momento in cui una frase precisa fa
+     * risparmiare un pomeriggio.
+     */
+    private fun spiegaErroreFirebase(e: Throwable): String {
+        val testo = generateSequence(e) { it.cause.takeIf { c -> c !== it } }
+            .take(8)
+            .joinToString(" ") { "${it::class.simpleName} ${it.message}" }
+
+        return when {
+            "CONFIGURATION_NOT_FOUND" in testo || "configuration-not-found" in testo ->
+                "Accesso anonimo non abilitato: Firebase Console → Authentication → " +
+                    "Sign-in method → Anonymous."
+
+            "PERMISSION_DENIED" in testo || "Missing or insufficient permissions" in testo ->
+                "Firestore rifiuta la scrittura: controlla le regole in " +
+                    "Firebase Console → Firestore Database → Regole."
+
+            else -> e.message?.takeIf { it.isNotBlank() } ?: "Qualcosa è andato storto."
+        }
     }
 
     private fun cartellaAudio(): File =
@@ -1827,6 +1865,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private companion object {
+        const val TAG = "RegiStrazio"
         const val TICK_MS = 250L
         const val SOGLIA_ASCOLTO = 30f
         const val BUCKETS = 24

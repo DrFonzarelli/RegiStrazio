@@ -1,5 +1,6 @@
 package com.example.registrazio.domain
 
+import android.util.Log
 import com.example.registrazio.data.local.ArchivioLocale
 import com.example.registrazio.data.remote.FirestoreRepository
 import com.example.registrazio.data.remote.MegaCrypto
@@ -69,7 +70,10 @@ class SyncManager(
         // Il proprio profilo per primo: senza, chi ha creato l'account su
         // questo telefono non comparirebbe nell'elenco di recupero degli altri,
         // e i suoi commenti resterebbero firmati da uno sconosciuto.
-        identita?.let { runCatching { firestore.salvaProfilo(it) }.onFailure { falliti++ } }
+        identita?.let {
+            runCatching { firestore.salvaProfilo(it) }
+                .onFailure { e -> Log.w(TAG, "profilo non caricato", e); falliti++ }
+        }
 
         // ---------- 1. pull ----------
 
@@ -103,19 +107,22 @@ class SyncManager(
         for (cartella in archivio.cartelleDaCaricare()) {
             runCatching { firestore.salvaCartella(cartella) }
                 .onSuccess { archivio.segnaCartellaCaricata(cartella.id); caricati++ }
-                .onFailure { archivio.segnaCartellaFallita(cartella.id); falliti++ }
+                .onFailure { e -> Log.w(TAG, "cartella ${cartella.id} non caricata", e); archivio.segnaCartellaFallita(cartella.id); falliti++ }
         }
 
         for (traccia in archivio.tracceDaCaricare()) {
             runCatching { firestore.salvaTraccia(traccia) }
                 .onSuccess { archivio.segnaTracciaCaricata(traccia.id); caricati++ }
-                .onFailure { archivio.segnaTracciaFallita(traccia.id); falliti++ }
+                .onFailure { e -> Log.w(TAG, "traccia ${traccia.id} non caricata", e); archivio.segnaTracciaFallita(traccia.id); falliti++ }
         }
 
         for (commento in archivio.commentiDaCaricare()) {
             runCatching { firestore.salvaCommento(commento) }
                 .onSuccess { archivio.segnaCommentoCaricato(commento.id); caricati++ }
-                .onFailure { archivio.segnaCommentoFallito(commento.id); falliti++ }
+                .onFailure { e ->
+                    Log.w(TAG, "commento ${commento.id} non caricato", e)
+                    archivio.segnaCommentoFallito(commento.id); falliti++
+                }
         }
 
         // ---------- 3. cancellazioni ----------
@@ -127,13 +134,13 @@ class SyncManager(
         for ((tracciaId, commentoId) in archivio.commentiDaCancellare()) {
             runCatching { firestore.eliminaCommento(tracciaId, commentoId) }
                 .onSuccess { archivio.dimenticaCommento(commentoId); caricati++ }
-                .onFailure { falliti++ }
+                .onFailure { e -> Log.w(TAG, "cancellazione non riuscita", e); falliti++ }
         }
 
         for (cartellaId in archivio.cartelleDaCancellare()) {
             runCatching { firestore.eliminaCartella(cartellaId) }
                 .onSuccess { archivio.dimenticaCartella(cartellaId); caricati++ }
-                .onFailure { falliti++ }
+                .onFailure { e -> Log.w(TAG, "cancellazione non riuscita", e); falliti++ }
         }
 
         return EsitoSync(caricati = caricati, scaricati = scaricati, falliti = falliti)
@@ -149,5 +156,9 @@ class SyncManager(
     suspend fun profili(): List<Utente> {
         firestore.assicuraAccesso()
         return firestore.profili()
+    }
+
+    private companion object {
+        const val TAG = "RegiStrazio"
     }
 }
