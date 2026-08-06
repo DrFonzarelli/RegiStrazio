@@ -137,6 +137,22 @@ class ServizioRiproduzione : MediaSessionService() {
  * invece di essere uno dentro Media3 e uno appiccicato sopra.
  */
 @UnstableApi
+/**
+ * "Prova 12 giugno · 3:24" — da dove viene il pezzo e quanto dura.
+ *
+ * La durata sta qui e non nel cronometro perché è **ferma**: quella che scorre
+ * la conta Android da sé. Insieme si leggono come il minutaggio classico, con
+ * il tempo trascorso a sinistra messo dal sistema.
+ */
+private fun sottotitolo(player: androidx.media3.common.Player): String {
+    val cartella = player.mediaMetadata.artist?.toString().orEmpty()
+    val durataMs = player.duration
+    if (durataMs <= 0L) return cartella
+    val totale = durataMs / 1000
+    val durata = "%d:%02d".format(totale / 60, totale % 60)
+    return if (cartella.isBlank()) durata else "$cartella · $durata"
+}
+
 private class ProviderNotifica(private val context: Context) : MediaNotification.Provider {
 
     override fun createNotification(
@@ -152,11 +168,26 @@ private class ProviderNotifica(private val context: Context) : MediaNotification
         val notifica = NotificationCompat.Builder(context, ServizioRiproduzione.CANALE)
             .setSmallIcon(R.drawable.ic_notifica)
             .setContentTitle(titolo.ifBlank { "RegiStrazio" })
-            .setContentText(player.mediaMetadata.artist ?: "")
-            // Il posto della copertina: lasciandolo vuoto il sistema ci mette
-            // un quadrato grigio, ed è la cosa che rendeva la notifica
-            // "grossolana" rispetto al prototipo.
-            .setLargeIcon(CopertinaOnde.per(titolo))
+            .setContentText(sottotitolo(player))
+            // Il tempo che scorre anche a notifica chiusa, **senza
+            // ripubblicarla ogni secondo**.
+            //
+            // `setUsesChronometer` è il meccanismo dei timer e delle chiamate:
+            // si dà ad Android l'istante in cui il conteggio è cominciato e
+            // l'orologio lo fa avanzare lui, nel proprio processo. Aggiornare
+            // il testo da qui vorrebbe dire ricostruire e ripubblicare la
+            // notifica una volta al secondo, che il sistema limita comunque.
+            //
+            // L'istante d'inizio è "adesso meno quanto abbiamo già suonato":
+            // così dopo un seek il cronometro riparte dal punto giusto invece
+            // che da zero. In pausa si spegne, o continuerebbe a correre su un
+            // audio fermo.
+            .setUsesChronometer(suona)
+            .setWhen(
+                if (suona) System.currentTimeMillis() - player.currentPosition.coerceAtLeast(0)
+                else 0L
+            )
+            .setShowWhen(suona)
             .setContentIntent(mediaSession.sessionActivity)
             .setDeleteIntent(ComandiNotifica.intento(context, ComandiNotifica.FERMA))
             // Una notifica di stato non deve suonare né riallertare a ogni
