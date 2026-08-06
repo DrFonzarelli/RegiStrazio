@@ -3,10 +3,10 @@ package com.example.registrazio.ui.theme
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -237,6 +237,30 @@ object AppIcons {
 }
 
 /**
+ * I `Path` già costruiti, per tutta la vita dell'app.
+ *
+ * `PathParser` legge una stringa SVG e ne costruisce un `Path`: costa poco una
+ * volta, moltissimo settanta volte al secondo. Ed era quello che succedeva —
+ * il `remember` di un composable vive quanto il suo posto nella composizione,
+ * e in una `LazyColumn` quel posto viene buttato appena la card esce dallo
+ * schermo. Scorrendo, ogni card che rientrava riparsava tutte le sue icone:
+ * play, stella, kebab, nuvola, e ognuna daccapo.
+ *
+ * Una mappa a parte perché le icone **non cambiano mai**: sono costanti
+ * dichiarate in [AppIcons]. Il primo che ne chiede una la costruisce, tutti
+ * gli altri se la trovano pronta.
+ *
+ * Non serve sincronizzarla: la composizione gira sul thread principale, e
+ * questa mappa non viene toccata da nessun altro.
+ */
+private val pathInCache = mutableMapOf<AppIconSpec, List<Pair<IconPath, Path>>>()
+
+private fun pathDi(spec: AppIconSpec): List<Pair<IconPath, Path>> =
+    pathInCache.getOrPut(spec) {
+        spec.paths.map { it to PathParser().parsePathString(it.d).toPath() }
+    }
+
+/**
  * Disegna una [AppIconSpec] alla dimensione richiesta.
  *
  * Il canvas viene scalato da viewBox a `size`, quindi anche gli spessori di
@@ -250,9 +274,7 @@ fun AppIcon(
     tint: Color,
     modifier: Modifier = Modifier
 ) {
-    val parsed = remember(spec) {
-        spec.paths.map { it to PathParser().parsePathString(it.d).toPath() }
-    }
+    val parsed = pathDi(spec)
     Canvas(modifier.size(size)) {
         val factor = this.size.minDimension / spec.viewBox
         scale(factor, pivot = Offset.Zero) {

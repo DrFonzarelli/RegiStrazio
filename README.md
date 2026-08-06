@@ -2115,6 +2115,32 @@ prima traccia ascoltata per sempre.
 qualsiasi cosa cambi a ogni frame è un pezzo di codice che gira a 60 Hz. Dentro
 ci va solo quello che deve girare a 60 Hz.
 
+**Non bastava.** Con cinque tracce lo scorrimento tornava fluido, con dieci no:
+segno che il costo era **per card**, non per lista. Il secondo colpevole era
+`AppIcon`:
+
+```kotlin
+val parsed = remember(spec) {
+    spec.paths.map { it to PathParser().parsePathString(it.d).toPath() }
+}
+```
+
+`remember` vive quanto il posto del composable nella composizione, e in una
+`LazyColumn` quel posto viene buttato appena la card esce dallo schermo.
+Scorrendo, ogni card che rientrava riparsava **tutte** le sue icone — play,
+stella, kebab, nuvola — da stringa SVG a `Path`, ognuna daccapo.
+
+*Fix:* una mappa a livello di file, popolata alla prima richiesta. Le icone
+sono costanti dichiarate in `AppIcons` e non cambiano mai, quindi i `Path` si
+costruiscono una volta per tutta la vita dell'app invece di una volta per
+apparizione. Non serve sincronizzarla: la composizione gira sul thread
+principale.
+
+*Da ricordare:* `remember` in una lista pigra non è una cache, è una memoria
+che dura quanto la visibilità. Per qualcosa di costoso e immutabile — path
+parsati, regex compilate, formatter — serve un posto che viva più a lungo del
+composable.
+
 ---
 
 ### Trappole del progetto da tenere a mente
