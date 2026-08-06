@@ -1058,9 +1058,9 @@ perché la BOM non le mostra): Firestore `26.5.0`, Auth `24.2.0`.
 | Nome della cartella letto da MEGA | ✅ | risolto provando tutti i nodi non-file, vedi errore 7 |
 | Waveform | 🟡 | equalizzatore animato decorativo, nessun dato reale |
 | Archivio locale (Room) | ✅ | **provato**: commenti, stelle e rinomine sopravvivono alla chiusura |
-| Elenco profili per il recupero account | 🟡 | da Firestore, con `ProfiliStore` come cache locale per il Gate offline: **da provare** |
-| Firestore | 🟡 | `FirestoreRepository` legge e scrive tutte e quattro le collection: **scritto, mai eseguito** |
-| Firebase Anonymous Auth | 🟡 | `assicuraAccesso()` prima di ogni giro: **da provare** |
+| Elenco profili per il recupero account | ✅ | **provato**: i profili arrivano da Firestore, `ProfiliStore` resta la cache per il Gate offline |
+| Firestore | 🟡 | **primo contatto provato**: legge i profili e li scrive. Cartelle, tracce e commenti da provare |
+| Firebase Anonymous Auth | ✅ | **provata**: l'accesso passa e le regole lo accettano |
 | MEGA HTTP API + crypto | ✅ | elenco, decifratura e scarico dei byte **verificati sul campo** |
 | Tasto Sincronizza | 🟡 | MEGA + pull + push + cancellazioni, con l'icona che gira: **tutto da provare** |
 | Banner offline | ❌ | c'è il messaggio al gesto che fallisce, non il banner permanente |
