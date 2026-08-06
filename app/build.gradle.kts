@@ -30,6 +30,21 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            // Firmata con la chiave di debug, così la release si installa sul
+            // telefono senza prima generare un keystore.
+            //
+            // **Serve a provare, non a pubblicare.** Un APK firmato così non
+            // può andare sul Play Store, e soprattutto non può essere
+            // aggiornato con una chiave diversa più avanti: quando arriverà il
+            // momento della distribuzione va creato un keystore vero e va
+            // conservato, perché perderlo vuol dire non poter più aggiornare
+            // l'app installata da nessuno.
+            //
+            // Perché intanto serve: una build di debug non dice la verità sulle
+            // prestazioni. Senza R8 e con la strumentazione di Compose accesa
+            // è molto più lenta, e uno scorrimento che scatta lì può essere
+            // perfettamente fluido qui.
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
     compileOptions {
