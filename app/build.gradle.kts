@@ -38,6 +38,10 @@ android {
     }
     buildFeatures {
         compose = true
+        // Da AGP 8 `BuildConfig` non si genera più da solo. Serve per
+        // `BuildConfig.DEBUG`, con cui il misuratore di scatti resta spento
+        // nelle build di release.
+        buildConfig = true
     }
 }
 

@@ -6,6 +6,7 @@ import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import com.example.registrazio.util.MisuratoreScatti
 import androidx.activity.enableEdgeToEdge
 import androidx.core.app.ActivityCompat
 import androidx.compose.runtime.getValue
@@ -28,6 +29,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Solo in debug: scrive nel log quanti fotogrammi si perdono e quando.
+        // Serve a misurare invece di indovinare, e in release non gira.
+        MisuratoreScatti.avvia(BuildConfig.DEBUG)
         // Il prototipo disegna sotto le barre di sistema (`viewport-fit=cover`)
         // e gestisce da sé le safe area: qui serve lo stesso edge-to-edge.
         enableEdgeToEdge()
