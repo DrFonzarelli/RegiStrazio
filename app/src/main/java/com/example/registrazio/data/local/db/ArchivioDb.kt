@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Dao
 import androidx.room.Database
 import androidx.room.Query
+import androidx.room.Transaction
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
@@ -154,6 +155,27 @@ interface ArchivioDao {
     suspend fun cartelleDaSincronizzare(): Int
 
     // ---------- strumenti di test ----------
+
+    /**
+     * Dopo uno svuotamento di Firestore fatto da fuori: quello che qui risulta
+     * già caricato non lo è più. Le righe `DA_ELIMINARE` restano dove sono —
+     * cancellare qualcosa che non c'è più è già successo.
+     */
+    @Query("UPDATE cartelle SET statoSync = 'LOCALE' WHERE statoSync = 'SINCRONIZZATO'")
+    suspend fun cartelleDaRicaricare()
+
+    @Query("UPDATE tracce SET statoSync = 'LOCALE' WHERE statoSync = 'SINCRONIZZATO'")
+    suspend fun tracceDaRicaricare()
+
+    @Query("UPDATE commenti SET statoSync = 'LOCALE' WHERE statoSync = 'SINCRONIZZATO' AND id NOT LIKE 'prova-%'")
+    suspend fun commentiDaRicaricare()
+
+    @Transaction
+    suspend fun segnaTuttoDaCaricare() {
+        cartelleDaRicaricare()
+        tracceDaRicaricare()
+        commentiDaRicaricare()
+    }
 
     @Query("DELETE FROM commenti")
     suspend fun svuotaCommenti()

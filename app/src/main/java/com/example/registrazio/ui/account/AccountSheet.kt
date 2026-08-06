@@ -52,7 +52,8 @@ fun AccountSheet(
     onChiudi: () -> Unit,
     onRimuoviCartella: (String) -> Unit,
     onSimulaReinstallazione: () -> Unit,
-    onSvuotaCloud: () -> Unit
+    onSvuotaCloud: () -> Unit,
+    onSvuotaFirestore: () -> Unit
 ) {
     val colors = AppTheme.colors
 
@@ -141,6 +142,10 @@ fun AccountSheet(
                 colors.danger,
                 onSvuotaCloud
             )
+            // Distruttivo per **tutto il gruppo**, non solo per questo
+            // telefono. Sta qui perché in questa fase l'unico che scrive è chi
+            // sviluppa; va tolto prima che l'app arrivi agli altri.
+            DevButton("Svuota il database del gruppo", colors.danger, onSvuotaFirestore)
         }
     }
 }

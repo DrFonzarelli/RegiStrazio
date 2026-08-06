@@ -7,6 +7,7 @@ import com.example.registrazio.data.model.Traccia
 import com.example.registrazio.data.model.Utente
 import com.example.registrazio.data.model.VotoStella
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.DocumentReference
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.tasks.await
@@ -152,6 +153,44 @@ class FirestoreRepository(
         db.collection(TRACCE).document(tracciaId)
             .collection(COMMENTI).document(commentoId)
             .delete().await()
+    }
+
+    /**
+     * Svuota il database. **Strumento di prova, distruttivo, per tutti.**
+     *
+     * Non è un reset locale: cancella i documenti del gruppo, cioè anche il
+     * lavoro degli altri. Esiste perché in questa fase l'unico che scrive è chi
+     * sviluppa, e ripulire a mano dalla console un documento per volta è
+     * insostenibile. **Va tolto prima che il gruppo cominci a usare l'app**, o
+     * prima o poi qualcuno lo troverà nel foglio account e ci proverà.
+     *
+     * L'ordine è dal basso: le sottoraccolte per prime. Cancellare un
+     * documento in Firestore **non cancella quello che ha sotto** — i commenti
+     * sopravvivrebbero alla traccia che li ospitava, invisibili e
+     * irraggiungibili, e riapparirebbero il giorno che qualcuno ricrea una
+     * traccia con lo stesso id.
+     *
+     * @return quanti documenti sono spariti.
+     */
+    suspend fun svuotaTutto(): Int {
+        var contati = 0
+        // I commenti stanno sotto le tracce: `collectionGroup` li prende tutti
+        // ovunque siano, che è l'unico modo di non lasciarne indietro.
+        contati += cancella(db.collectionGroup(COMMENTI).get().await().documents.map { it.reference })
+        contati += cancella(db.collection(TRACCE).get().await().documents.map { it.reference })
+        contati += cancella(db.collection(CARTELLE).get().await().documents.map { it.reference })
+        contati += cancella(db.collection(UTENTI).get().await().documents.map { it.reference })
+        return contati
+    }
+
+    /** A blocchi di 500, che è il tetto di scritture per batch di Firestore. */
+    private suspend fun cancella(riferimenti: List<DocumentReference>): Int {
+        for (blocco in riferimenti.chunked(500)) {
+            val batch = db.batch()
+            blocco.forEach { batch.delete(it) }
+            batch.commit().await()
+        }
+        return riferimenti.size
     }
 
     private companion object {

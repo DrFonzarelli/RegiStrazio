@@ -80,6 +80,7 @@ fun AppRoot(
         var accountAperto by remember { mutableStateOf(false) }
         var daEliminare by remember { mutableStateOf<Pair<Traccia, Commento>?>(null) }
         var confermaBulk by remember { mutableStateOf<String?>(null) }
+        var confermaSvuotaCloud by remember { mutableStateOf(false) }
         var dettagli by remember { mutableStateOf<Traccia?>(null) }
         var toastVisibile by remember { mutableStateOf(false) }
 
@@ -363,6 +364,22 @@ fun AppRoot(
             )
         }
 
+        if (confermaSvuotaCloud) {
+            ConfermaSheet(
+                titolo = "Svuotare il database del gruppo?",
+                testo = "Cancella cartelle, tracce, commenti e profili di TUTTI, " +
+                    "non solo i tuoi. Quello che hai sul telefono resta, e tornerà " +
+                    "da caricare al prossimo Sincronizza.",
+                etichettaConferma = "Svuota tutto",
+                coloreConferma = colors.danger,
+                onAnnulla = { confermaSvuotaCloud = false },
+                onConferma = {
+                    vm.svuotaFirestore()
+                    confermaSvuotaCloud = false
+                }
+            )
+        }
+
         dettagli?.let { traccia ->
             val aggiornata = state.tracce.find { it.id == traccia.id } ?: traccia
             TrackDetailsSheet(
@@ -396,6 +413,10 @@ fun AppRoot(
                     onSvuotaCloud = {
                         accountAperto = false
                         vm.svuotaCloudSimulato()
+                    },
+                    onSvuotaFirestore = {
+                        accountAperto = false
+                        confermaSvuotaCloud = true
                     }
                 )
             }

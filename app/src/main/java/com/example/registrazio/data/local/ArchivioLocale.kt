@@ -249,6 +249,16 @@ class ArchivioLocale(context: Context) {
         }
     }
 
+    /**
+     * Riporta tutto a "da caricare".
+     *
+     * Serve dopo aver svuotato Firestore da fuori: le righe qui dicono
+     * `SINCRONIZZATO`, cioè "lassù c'è" — e lassù non c'è più niente. Senza
+     * questo il prossimo Sincronizza non troverebbe niente da mandare e il
+     * database resterebbe vuoto per sempre.
+     */
+    suspend fun segnaTuttoDaCaricare() = dao.segnaTuttoDaCaricare()
+
     /** Strumento di test del foglio account. */
     suspend fun svuota() {
         for (riga in dao.download()) File(riga.percorso).delete()

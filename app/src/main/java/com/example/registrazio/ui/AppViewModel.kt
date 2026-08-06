@@ -1850,6 +1850,42 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         riparti("Tutto azzerato — ricollego le cartelle di prova.")
     }
 
+    /**
+     * Cancella **tutto** su Firestore. Strumento di prova, distruttivo.
+     *
+     * Non tocca il telefono: dopo, il locale è ancora pieno e tutto risulta da
+     * ricaricare. È la coppia opposta di "Riparti dai dati di prova", che
+     * invece svuota il telefono e lascia stare il cloud — e insieme coprono i
+     * due modi in cui serve ripartire puliti.
+     *
+     * Va tolto prima che il gruppo cominci a usare l'app davvero: qui dentro
+     * non esiste il concetto di "solo i miei documenti", e da un telefono
+     * qualunque questo tasto cancellerebbe il lavoro di tutti.
+     */
+    fun svuotaFirestore() {
+        viewModelScope.launch {
+            runCatching {
+                firestore.assicuraAccesso()
+                firestore.svuotaTutto()
+            }
+                .onSuccess { quanti ->
+                    Log.i(TAG, "Firestore svuotato: $quanti documenti")
+                    // Tutto quello che c'è qui non è più lassù: torna da
+                    // caricare, o il prossimo Sincronizza non lo rimanderebbe.
+                    archivio.segnaTuttoDaCaricare()
+                    ricaricaDaArchivio()
+                    mostra(
+                        if (quanti == 0) "Il database era già vuoto"
+                        else "Database svuotato — $quanti documenti"
+                    )
+                }
+                .onFailure { e ->
+                    Log.w(TAG, "svuotamento non riuscito", e)
+                    mostra(spiegaErroreFirebase(e))
+                }
+        }
+    }
+
     /** Svuota l'archivio e rimette il banco di prova, in quest'ordine. */
     private fun riparti(messaggio: String) {
         mostra(messaggio)
