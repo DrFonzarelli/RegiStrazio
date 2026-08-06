@@ -2160,6 +2160,26 @@ contata due volte, perché le card in una lista sono già un moltiplicatore. Un
 composable per barra sembra ragionevole finché non lo si moltiplica per 36 e
 poi per 10. Se una cosa è solo disegno, disegnala.
 
+**E la vera risposta era un'altra: era una build di debug.** In release lo
+scorrimento è liscio, senza un solo scatto — sulla stessa cartella, sullo
+stesso telefono, con lo stesso codice. Una build di debug non ha R8 e ha la
+strumentazione di Compose accesa, che traccia ogni composizione: sulle liste
+la differenza non è del dieci per cento, è di un ordine di grandezza. I
+fotogrammi da 330 ms misurati in debug non esistevano per nessun utente.
+
+*Da ricordare, ed è la parte che costa:* **prima di ottimizzare, misurare
+dove conta.** Qui sono stati fatti tre giri di ottimizzazione — sensati, tutti
+su costi veri — inseguendo un problema che nella build che la gente usa non
+c'era. Nessuno dei tre era sbagliato e nessuno peggiorava l'interfaccia, ma
+l'ordine giusto era: provare in release, e solo se scatta anche lì mettersi a
+cercare. Un profilo preso sulla build sbagliata risponde con precisione alla
+domanda sbagliata.
+
+Il misuratore è rimasto (`MisuratoreScatti`, tag `RegiStrazioScatti`) e resta
+utile — ma i suoi numeri vanno letti sapendo che sono numeri di debug, cioè
+buoni per confrontare *prima e dopo una modifica*, non per decidere se c'è un
+problema.
+
 ---
 
 ### Trappole del progetto da tenere a mente
