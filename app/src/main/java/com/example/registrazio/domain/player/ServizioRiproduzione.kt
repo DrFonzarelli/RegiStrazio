@@ -170,10 +170,16 @@ private class ProviderNotifica(private val context: Context) : MediaNotification
             .addAction(CommentoRapido.azione(context))
             .setStyle(
                 MediaStyleNotificationHelper.MediaStyle(mediaSession)
-                    // In vista compatta si vede solo il primo tasto: play/pausa.
-                    // "Commenta" apre una tastiera, e non è un gesto da fare per
-                    // sbaglio scorrendo le notifiche.
-                    .setShowActionsInCompactView(0)
+                    // Play/pausa **e** commenta, entrambi in vista compatta.
+                    //
+                    // Prima c'era solo il primo, per non far aprire la tastiera
+                    // per sbaglio scorrendo le notifiche. Ma la vista estesa su
+                    // molti telefoni è scomoda da raggiungere, e commentare è
+                    // il motivo per cui questa app esiste: nasconderlo dietro un
+                    // gesto difficile lo rendeva di fatto irraggiungibile
+                    // proprio nel momento in cui serve, cioè mentre ascolti con
+                    // lo schermo bloccato.
+                    .setShowActionsInCompactView(0, 1)
             )
             .build()
 
