@@ -53,6 +53,28 @@ object AppIcons {
 
     val Play = AppIconSpec(listOf(fill("M6 4 L20 12 L6 20 Z")))
 
+    /**
+     * Traccia successiva e precedente: il triangolo di [Play] più la sbarra.
+     *
+     * Non vengono dal prototipo — lì questi due tasti non ci sono — ma dallo
+     * stesso disegno di `Play`, così stanno insieme agli altri invece di
+     * sembrare presi da un'altra app. Sono le forme standard: chiunque le
+     * riconosce senza doverci pensare.
+     */
+    val SkipNext = AppIconSpec(
+        listOf(
+            fill("M5 4 L16 12 L5 20 Z"),
+            fill("M18 4 L20.5 4 L20.5 20 L18 20 Z")
+        )
+    )
+
+    val SkipPrev = AppIconSpec(
+        listOf(
+            fill("M19 4 L8 12 L19 20 Z"),
+            fill("M6 4 L3.5 4 L3.5 20 L6 20 Z")
+        )
+    )
+
     // pause: due <rect x=5|14 y=4 w=5 h=16 rx=1>
     val Pause = AppIconSpec(
         listOf(

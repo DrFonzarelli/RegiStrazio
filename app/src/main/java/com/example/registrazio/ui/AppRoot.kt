@@ -323,6 +323,8 @@ fun AppRoot(
                             }
                         },
                         onTogglePlay = { vm.togglePlay(traccia.id) },
+                        onPrecedente = vm::tracciaPrecedente,
+                        onSuccessiva = vm::tracciaSuccessiva,
                         onCommenta = {
                             // Nessun riquadro tutto suo: ti porta sulla card e
                             // apre quella vera, come il prototipo che preme il

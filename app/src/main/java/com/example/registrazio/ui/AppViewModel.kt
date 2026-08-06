@@ -26,6 +26,7 @@ import com.example.registrazio.data.remote.MegaCrypto
 import com.example.registrazio.domain.EsitoSync
 import com.example.registrazio.domain.SyncManager
 import com.example.registrazio.domain.identity.IdentityManager
+import com.example.registrazio.domain.player.ComandiTraccia
 import com.example.registrazio.domain.player.CommentiDaFuori
 import com.example.registrazio.domain.player.PlayerCondiviso
 import com.example.registrazio.domain.player.PlayerMega
@@ -280,6 +281,19 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         // prossimo avvio.
         viewModelScope.launch {
             CommentiDaFuori.nuovi.collect { tracciaId -> ricaricaCommenti(tracciaId) }
+        }
+
+        // I tasti avanti/indietro della notifica finiscono qui, cioè nello
+        // stesso posto di quelli della barra in ascolto. La notifica non decide
+        // quale sia la traccia dopo: chiede, e a rispondere è sempre questo
+        // codice — un solo comportamento, non due che possono divergere.
+        viewModelScope.launch {
+            ComandiTraccia.richieste.collect { direzione ->
+                when (direzione) {
+                    ComandiTraccia.Direzione.AVANTI -> tracciaSuccessiva()
+                    ComandiTraccia.Direzione.INDIETRO -> tracciaPrecedente()
+                }
+            }
         }
 
         player.onErrore = { errore ->
@@ -701,6 +715,68 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         // continuerebbe a scrivere la stessa posizione insieme al nuovo.
         playJob?.cancel()
         playJob = viewModelScope.launch { seguiPosizione(tracciaId) }
+    }
+
+    /**
+     * Le tracce di tutte le cartelle in fila, nell'ordine in cui si vedono.
+     *
+     * Le cartelle nell'ordine della Home, e dentro ognuna le tracce con
+     * l'ordinamento scelto. Da questo elenco piatto "traccia successiva"
+     * diventa **indice + 1**, e il passaggio da una cartella all'altra viene
+     * da sé: l'ultima traccia di una cartella e la prima della successiva sono
+     * vicine di posto, senza nessun caso particolare da scrivere.
+     */
+    private fun elencoCompleto(): List<Traccia> {
+        val stato = _state.value
+        return stato.cartelle.flatMap { cartella ->
+            stato.tracce.filter { it.cartellaId == cartella.id }.ordinate(stato.ordinamento)
+        }
+    }
+
+    /** Il tasto "avanti" della barra in ascolto, e quello della notifica. */
+    fun tracciaSuccessiva() = salta(+1)
+
+    /** Il tasto "indietro". */
+    fun tracciaPrecedente() = salta(-1)
+
+    /**
+     * Si sposta di [passo] posti nell'elenco completo e fa partire quello che
+     * trova.
+     *
+     * **Gira su sé stesso**: dopo l'ultima traccia dell'ultima cartella si
+     * torna alla prima della prima, e viceversa andando indietro. Fermarsi in
+     * fondo lascerebbe un tasto che ogni tanto non fa niente senza dire
+     * perché — e su una notifica, dove non si vede a che punto della libreria
+     * si è, sembrerebbe rotto.
+     *
+     * Il doppio `%` con il `+ size` in mezzo serve al verso negativo: in
+     * Kotlin `-1 % 5` fa `-1`, non `4`.
+     */
+    private fun salta(passo: Int) {
+        val elenco = elencoCompleto()
+        if (elenco.isEmpty()) return
+
+        val corrente = _state.value.riproduzione.tracciaId
+        val posto = elenco.indexOfFirst { it.id == corrente }
+        // Nessuna traccia in ascolto: "avanti" parte dalla prima, "indietro"
+        // dall'ultima. È l'unico modo di dare un senso a un salto che non ha
+        // un punto di partenza.
+        val destinazione =
+            if (posto < 0) (if (passo > 0) 0 else elenco.lastIndex)
+            else ((posto + passo) % elenco.size + elenco.size) % elenco.size
+
+        val traccia = elenco[destinazione]
+
+        // Cambiando cartella lo si dice: il titolo in cima cambia da solo, ma
+        // chi ha lo schermo bloccato o sta guardando altro non lo vedrebbe.
+        val cartellaPrima = elenco.getOrNull(posto)?.cartellaId
+        if (cartellaPrima != null && cartellaPrima != traccia.cartellaId) {
+            _state.value.cartelle.find { it.id == traccia.cartellaId }?.nome
+                ?.takeIf { it.isNotBlank() }
+                ?.let { mostra(it) }
+        }
+
+        avvia(traccia.id, 0f)
     }
 
     /**

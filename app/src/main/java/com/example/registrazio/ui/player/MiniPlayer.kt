@@ -61,6 +61,8 @@ fun MiniPlayer(
     onVaiAllaTraccia: () -> Unit,
     onTogglePlay: () -> Unit,
     onCommenta: () -> Unit,
+    onPrecedente: () -> Unit,
+    onSuccessiva: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val colors = AppTheme.colors
@@ -123,6 +125,19 @@ fun MiniPlayer(
                 background = colors.accentSoft
             )
 
+            // Precedente, play, successiva: l'ordine di qualunque lettore, e
+            // il play in mezzo perché è quello che si preme al buio. Più
+            // piccoli e senza fondo, così restano secondari rispetto al play —
+            // sbagliare traccia è più fastidioso che sbagliare pausa.
+            AppIconButton(
+                icon = AppIcons.SkipPrev,
+                contentDescription = "Traccia precedente",
+                onClick = onPrecedente,
+                size = 34.dp,
+                iconSize = 15.dp,
+                tint = colors.textSecondary
+            )
+
             AppIconButton(
                 icon = if (inRiproduzione) AppIcons.Pause else AppIcons.Play,
                 contentDescription = if (inRiproduzione) "Pausa" else "Riprendi",
@@ -131,6 +146,15 @@ fun MiniPlayer(
                 iconSize = 15.dp,
                 tint = colors.accent,
                 background = colors.accentSoft
+            )
+
+            AppIconButton(
+                icon = AppIcons.SkipNext,
+                contentDescription = "Traccia successiva",
+                onClick = onSuccessiva,
+                size = 34.dp,
+                iconSize = 15.dp,
+                tint = colors.textSecondary
             )
         }
     }

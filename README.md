@@ -1064,7 +1064,8 @@ perché la BOM non le mostra): Firestore `26.5.0`, Auth `24.2.0`.
 | MEGA HTTP API + crypto | ✅ | elenco, decifratura e scarico dei byte **verificati sul campo** |
 | Tasto Sincronizza | 🟡 | MEGA + pull + push + cancellazioni, con l'icona che gira: **tutto da provare** |
 | Banner offline | ❌ | c'è il messaggio al gesto che fallisce, non il banner permanente |
-| Riproduzione in background + notifica | 🟡 | `MediaSessionService` vero: **compila, tutto da provare sul telefono** |
+| Riproduzione in background + notifica | ✅ | **provata**: icona, cronometro, commento sopra il blocco schermo |
+| Traccia precedente/successiva | 🟡 | barra in ascolto + notifica, stessa logica per entrambi: **da provare** |
 | Commento dalla notifica | 🟡 | schermatina col lucchetto, minutaggio congelato all'apertura: **da provare** |
 | Download reale su disco | ✅ | **provato**: scarica, decifra, suona da locale, si rimuove |
 | Pausa e ripresa del download | ✅ | **provata**: riprende da dove era, dai tre comandi |
@@ -2004,6 +2005,48 @@ vuota resterebbe.
   cartella da MEGA.
 - Nessun `listener` in tempo reale: è una scelta della v1, i commenti non si
   aggiornano da soli mentre l'app è aperta.
+
+---
+
+### Traccia precedente e successiva
+
+I due tasti stanno nella **barra in ascolto** e nella **notifica**, e finiscono
+nello stesso punto: `AppViewModel.tracciaSuccessiva()` /
+`tracciaPrecedente()`. Nelle card delle singole tracce non ci sono — lì la
+traccia ce l'hai già davanti e la tocchi.
+
+**La notifica non decide, chiede.** `ComandiNotifica` riceve il tap e manda una
+`Direzione` su `ComandiTraccia`; il ViewModel la raccoglie e salta. Un
+`BroadcastReceiver` che leggesse Room per rispondere da sé darebbe una seconda
+risposta possibile alla stessa domanda — quale sia la traccia dopo dipende
+dalle cartelle collegate, dal loro ordine e dall'ordinamento scelto — e prima o
+poi le due divergerebbero: due tasti identici, due comportamenti diversi a
+seconda di dove li premi.
+
+**Il passaggio fra cartelle non è codice, è una conseguenza.**
+`elencoCompleto()` mette in fila le tracce di tutte le cartelle nell'ordine in
+cui si vedono, e da lì "successiva" è **indice + 1**. L'ultima traccia di una
+cartella e la prima della successiva sono vicine di posto: non c'è nessun caso
+particolare da gestire, e quando si cambia cartella un messaggio ne dice il
+nome, perché chi ha lo schermo bloccato non vedrebbe cambiare il titolo.
+
+**Gira su sé stesso**: dopo l'ultima traccia dell'ultima cartella si torna alla
+prima della prima. Fermarsi in fondo lascerebbe un tasto che ogni tanto non fa
+niente senza dire perché, e su una notifica — dove non si vede a che punto
+della libreria si è — sembrerebbe rotto.
+
+> **Se l'app non è in memoria, i tasti della notifica non fanno niente.** Chi
+> ascolta la richiesta è il ViewModel. In pratica il caso non si presenta: la
+> notifica esiste finché esiste il servizio, e Android che uccide il processo
+> porta via entrambi. Se un domani dovranno funzionare a processo morto, la
+> strada non è duplicare la logica nel receiver — è farla vivere sotto il
+> ViewModel, dove il servizio possa raggiungerla.
+
+**Domanda aperta:** a fine traccia la riproduzione **si ferma**, non passa alla
+successiva. È il comportamento di prima e non l'ho cambiato, perché su
+registrazioni di prove può essere voluto — si ascolta una take e ci si vuole
+pensare, non farsi portare avanti. Ora che la navigazione esiste, il
+concatenamento automatico sarebbe due righe in `player.onFine`.
 
 ---
 

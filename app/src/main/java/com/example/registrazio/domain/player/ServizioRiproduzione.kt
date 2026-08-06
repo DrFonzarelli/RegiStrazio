@@ -195,6 +195,15 @@ private class ProviderNotifica(private val context: Context) : MediaNotification
             .setOnlyAlertOnce(true)
             .setSilent(true)
             .setOngoing(suona)
+            // L'ordine conta: è quello di qualunque lettore, e su una notifica
+            // la posizione è l'unica cosa che si riconosce al volo.
+            .addAction(
+                NotificationCompat.Action.Builder(
+                    android.R.drawable.ic_media_previous,
+                    "Traccia precedente",
+                    ComandiNotifica.intento(context, ComandiNotifica.PRECEDENTE)
+                ).build()
+            )
             .addAction(
                 NotificationCompat.Action.Builder(
                     if (suona) android.R.drawable.ic_media_pause
@@ -203,19 +212,28 @@ private class ProviderNotifica(private val context: Context) : MediaNotification
                     ComandiNotifica.intento(context, ComandiNotifica.PLAY_PAUSA)
                 ).build()
             )
+            .addAction(
+                NotificationCompat.Action.Builder(
+                    android.R.drawable.ic_media_next,
+                    "Traccia successiva",
+                    ComandiNotifica.intento(context, ComandiNotifica.SUCCESSIVA)
+                ).build()
+            )
             .addAction(CommentoRapido.azione(context))
             .setStyle(
                 MediaStyleNotificationHelper.MediaStyle(mediaSession)
-                    // Play/pausa **e** commenta, entrambi in vista compatta.
+                    // In vista compatta Android ne mostra al massimo tre, e
+                    // sono queste: indietro, play/pausa, avanti. Il commento
+                    // resta il quarto, visibile espandendo.
                     //
-                    // Prima c'era solo il primo, per non far aprire la tastiera
-                    // per sbaglio scorrendo le notifiche. Ma la vista estesa su
-                    // molti telefoni è scomoda da raggiungere, e commentare è
-                    // il motivo per cui questa app esiste: nasconderlo dietro un
-                    // gesto difficile lo rendeva di fatto irraggiungibile
-                    // proprio nel momento in cui serve, cioè mentre ascolti con
-                    // lo schermo bloccato.
-                    .setShowActionsInCompactView(0, 1)
+                    // È la scelta che costa di più, perché commentare è il
+                    // motivo per cui questa app esiste. Ma da schermo bloccato
+                    // scrivere richiede comunque di aprire una schermata e una
+                    // tastiera, mentre saltare traccia è il gesto che si fa al
+                    // buio senza guardare: quello va raggiunto senza aprire
+                    // niente. Se all'uso risultasse sbagliato, si scambia
+                    // l'indice 3 con lo 0 qui sotto.
+                    .setShowActionsInCompactView(0, 1, 2)
             )
             .build()
 
@@ -244,6 +262,14 @@ class ComandiNotifica : BroadcastReceiver() {
         val player = PlayerCondiviso.player(context)
         when (intent.action) {
             PLAY_PAUSA -> if (player.isPlaying) player.pause() else player.play()
+            // Qui non si decide **quale** sia la traccia dopo: quello dipende
+            // dalle cartelle collegate, dal loro ordine e da dove siamo, cioè
+            // da cose che sa il ViewModel. Rispondere anche da qui vorrebbe
+            // dire avere due risposte possibili alla stessa domanda, e prima o
+            // poi divergerebbero: due tasti identici, due comportamenti diversi
+            // a seconda di dove li premi.
+            SUCCESSIVA -> ComandiTraccia.chiedi(ComandiTraccia.Direzione.AVANTI)
+            PRECEDENTE -> ComandiTraccia.chiedi(ComandiTraccia.Direzione.INDIETRO)
             FERMA -> {
                 player.pause()
                 ServizioRiproduzione.ferma(context)
@@ -254,6 +280,8 @@ class ComandiNotifica : BroadcastReceiver() {
     companion object {
         const val PLAY_PAUSA = "com.example.registrazio.PLAY_PAUSA"
         const val FERMA = "com.example.registrazio.FERMA"
+        const val SUCCESSIVA = "com.example.registrazio.SUCCESSIVA"
+        const val PRECEDENTE = "com.example.registrazio.PRECEDENTE"
 
         fun intento(context: Context, azione: String): PendingIntent = PendingIntent.getBroadcast(
             context,
