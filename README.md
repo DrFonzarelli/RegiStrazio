@@ -2141,6 +2141,25 @@ che dura quanto la visibilità. Per qualcosa di costoso e immutabile — path
 parsati, regex compilate, formatter — serve un posto che viva più a lungo del
 composable.
 
+**Nemmeno quello bastava**, e il colpevole vero era il più grosso dei tre.
+`EqualizerBackground` impaginava **una barra per composable**, con `EQ_BARS =
+36`, e dava a ciascuna la sua `animateDpAsState`. Trentasei nodi di layout e
+trentasei animazioni **per card**, moltiplicati per le card a schermo: con
+dieci tracce sono trecentosessanta animazioni registrate. E si pagavano anche
+a riposo, perché `animateDpAsState` esiste comunque, ferma o no — motivo per
+cui lo scatto si sentiva pure senza niente in riproduzione.
+
+*Fix:* un `Canvas` solo. Le stesse barre diventano trentasei `drawRoundRect`
+in fase di **draw**: nessun nodo, nessuna misurazione, nessuna ricomposizione.
+L'animazione è una sola — un avanzamento da 0 a 1 fra le altezze di prima e
+quelle nuove, che il disegno interpola. Muovendo solo la fase di draw, Compose
+non ricompone e non riesegue il layout di niente.
+
+*Da ricordare:* qualunque cosa si ripeta **per elemento dentro una card** va
+contata due volte, perché le card in una lista sono già un moltiplicatore. Un
+composable per barra sembra ragionevole finché non lo si moltiplica per 36 e
+poi per 10. Se una cosa è solo disegno, disegnala.
+
 ---
 
 ### Trappole del progetto da tenere a mente

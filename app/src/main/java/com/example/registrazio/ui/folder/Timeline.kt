@@ -1,9 +1,11 @@
 package com.example.registrazio.ui.folder
 
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -39,6 +41,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
@@ -342,36 +347,71 @@ private fun MarkerCommento(
 @Composable
 private fun EqualizerBackground(attivo: Boolean) {
     val colors = AppTheme.colors
-    var altezze by remember { mutableStateOf(List(EQ_BARS) { 3f }) }
+
+    // Un `Canvas` solo, non 36 `Box`.
+    //
+    // La prima versione impaginava una barra per composable, ognuna con la sua
+    // `animateDpAsState`: trentasei nodi di layout e **trentasei animazioni**
+    // per card, che in una lista si moltiplicano per le card a schermo. Erano
+    // registrate anche a riposo — `animateDpAsState` esiste comunque, ferma o
+    // no — quindi il costo si pagava pure con niente in riproduzione. È il
+    // motivo per cui una cartella da cinque tracce scorreva liscia e una da
+    // dieci no.
+    //
+    // Disegnate, le stesse barre sono trentasei rettangoli in fase di draw:
+    // nessun nodo, nessuna misurazione, e l'animazione è **una sola** — un
+    // avanzamento da 0 a 1 fra le altezze di prima e quelle nuove, che il
+    // disegno interpola. Muovendo solo la fase di draw, Compose non ricompone
+    // e non riesegue il layout di niente.
+    var da by remember { mutableStateOf(List(EQ_BARS) { RIPOSO }) }
+    var a by remember { mutableStateOf(List(EQ_BARS) { RIPOSO }) }
+    val avanzamento = remember { Animatable(1f) }
 
     LaunchedEffect(attivo) {
         if (!attivo) {
-            altezze = List(EQ_BARS) { 3f }
+            da = List(EQ_BARS) { RIPOSO }
+            a = da
+            avanzamento.snapTo(1f)
             return@LaunchedEffect
         }
         while (true) {
-            altezze = List(EQ_BARS) { 2f + Random.nextFloat() * 15f }
-            delay(200)
+            // Si riparte da dove si era arrivati, non dall'ultimo bersaglio:
+            // interrompendo a metà, le barre non saltano.
+            da = interpola(da, a, avanzamento.value)
+            a = List(EQ_BARS) { 2f + Random.nextFloat() * 15f }
+            avanzamento.snapTo(0f)
+            avanzamento.animateTo(1f, tween(140))
+            delay(60)
         }
     }
 
-    Row(
-        Modifier
-            .fillMaxSize()
-            .alpha(if (attivo) 0.3f else 0.14f)
-            .padding(horizontal = 1.dp),
-        horizontalArrangement = Arrangement.spacedBy(1.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        altezze.forEach { altezza ->
-            val h by animateDpAsState(altezza.dp, tween(140), label = "eqBar")
-            Box(
-                Modifier
-                    .weight(1f)
-                    .height(h)
-                    .clip(RoundedCornerShape(1.dp))
-                    .background(colors.borderStrong)
+    val alpha = if (attivo) 0.3f else 0.14f
+    Canvas(Modifier.fillMaxSize()) {
+        val quante = EQ_BARS
+        val spazio = 1.dp.toPx()
+        val margine = 1.dp.toPx()
+        val larghezzaBarra =
+            ((size.width - margine * 2) - spazio * (quante - 1)) / quante
+        if (larghezzaBarra <= 0f) return@Canvas
+
+        val frazione = avanzamento.value
+        for (i in 0 until quante) {
+            val altezza = (da[i] + (a[i] - da[i]) * frazione).dp.toPx()
+            val x = margine + i * (larghezzaBarra + spazio)
+            drawRoundRect(
+                color = colors.borderStrong,
+                topLeft = Offset(x, (size.height - altezza) / 2f),
+                size = Size(larghezzaBarra, altezza),
+                cornerRadius = CornerRadius(1.dp.toPx()),
+                alpha = alpha
             )
         }
     }
 }
+
+/** Le altezze a metà strada, per non far saltare le barre a ogni giro. */
+private fun interpola(da: List<Float>, a: List<Float>, frazione: Float): List<Float> =
+    List(da.size) { i -> da[i] + (a[i] - da[i]) * frazione }
+
+/** Altezza delle barre quando non suona niente: lo spazio resta occupato. */
+private const val RIPOSO = 3f
