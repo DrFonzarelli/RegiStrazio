@@ -15,8 +15,15 @@
     android:width="24dp"
     android:height="24dp"
     android:viewportWidth="136.87"
-    android:viewportHeight="104.32"
+    android:viewportHeight="136.87"
     android:tint="#FFFFFFFF">
+    <!--
+        Il viewport è quadrato mentre il logo è largo 136,87 e alto 104,32:
+        senza il gruppo che lo centra, `width` e `height` uguali lo
+        schiaccerebbero in verticale per farcelo stare. Traslare di
+        (136,87 - 104,32) / 2 lo rimette in mezzo senza deformarlo.
+    -->
+    <group android:translateY="16.275">
     <path
         android:fillColor="#FFFFFFFF"
         android:pathData="M126.33,48.41c-3.61-4-8.11-8.94-16.83-8.94s-13.23,5-16.84,8.94-5.81,6.15-10.54,6.15-7-2.23-10.54-6.15-8.11-8.94-16.83-8.94-13.23,5-16.84,8.94-5.81,6.15-10.54,6.15-7-2.23-10.53-6.15S8.73,39.47,0,39.47V48c4.73,0,7,2.23,10.54,6.15s8.11,8.94,16.83,8.94,13.23-5,16.84-8.94c2.26-2.5,4-4.3,6.18-5.28v55.48l18-17.4,18,17.4V62.6c6-1.32,9.51-5.22,12.47-8.48C102.52,50.2,104.77,48,109.5,48s7,2.23,10.54,6.15,8.11,8.94,16.83,8.94v-8.5C132.14,54.56,129.9,52.33,126.33,48.41ZM68.44,76.19l-10.33,10V48.46c2.67.85,4.58,2.8,7.17,5.66,3.12,3.44,6.9,7.59,13.48,8.67V86.14Z" />
@@ -26,4 +33,5 @@
     <path
         android:fillColor="#FFFFFFFF"
         android:pathData="M39.23,30.47A15.24,15.24,0,1,0,24,15.23,15.25,15.25,0,0,0,39.23,30.47Zm0-22.74a7.51,7.51,0,1,1-7.51,7.5A7.5,7.5,0,0,1,39.23,7.73Z" />
+    </group>
 </vector>

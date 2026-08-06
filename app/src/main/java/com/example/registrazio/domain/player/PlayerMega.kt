@@ -98,12 +98,13 @@ class PlayerMega(context: Context) {
         url: String,
         chiave: MegaCrypto.ChiaveFile,
         daSecondi: Float,
-        titolo: String = ""
+        titolo: String = "",
+        cartella: String = ""
     ) {
         durataNotificata = 0
         val sorgente = ProgressiveMediaSource
             .Factory(MegaDataSourceFactory(chiave))
-            .createMediaSource(itemConTitolo(url, titolo))
+            .createMediaSource(itemConTitolo(url, titolo, cartella))
 
         player.setMediaSource(sorgente)
         player.prepare()
@@ -118,9 +119,14 @@ class PlayerMega(context: Context) {
      * perché lo scaricatore lo decifra mentre lo scrive. Va bene il MediaItem
      * normale, e non serve nemmeno la rete.
      */
-    fun riproduciFile(file: java.io.File, daSecondi: Float, titolo: String = "") {
+    fun riproduciFile(
+        file: java.io.File,
+        daSecondi: Float,
+        titolo: String = "",
+        cartella: String = ""
+    ) {
         durataNotificata = 0
-        player.setMediaItem(itemConTitolo(android.net.Uri.fromFile(file).toString(), titolo))
+        player.setMediaItem(itemConTitolo(android.net.Uri.fromFile(file).toString(), titolo, cartella))
         player.prepare()
         if (daSecondi > 0f) player.seekTo((daSecondi * 1000).toLong())
         player.play()
@@ -133,13 +139,17 @@ class PlayerMega(context: Context) {
      * mostrerebbero l'indirizzo temporaneo di MEGA o il percorso di un file in
      * cache, che non dicono niente a nessuno.
      */
-    private fun itemConTitolo(uri: String, titolo: String): MediaItem =
+    private fun itemConTitolo(uri: String, titolo: String, cartella: String): MediaItem =
         MediaItem.Builder()
             .setUri(uri)
             .setMediaMetadata(
                 MediaMetadata.Builder()
                     .setTitle(titolo.ifBlank { "RegiStrazio" })
-                    .setArtist("RegiStrazio")
+                    // La cartella, non il nome dell'app: quello sta già in cima
+                    // alla notifica, messo dal sistema, e ripeterlo qui sotto
+                    // sprecava l'unica riga che poteva dire qualcosa di utile —
+                    // da quale prova viene il pezzo che stai ascoltando.
+                    .setArtist(cartella.ifBlank { "RegiStrazio" })
                     .build()
             )
             .build()

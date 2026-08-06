@@ -35,8 +35,15 @@ object MisuratoreScatti {
     /** Periodo di un fotogramma a 60 Hz, in nanosecondi. */
     private const val PERIODO_NS = 16_666_667L
 
-    /** Sotto questa soglia è un fotogramma lento, non uno scatto visibile. */
-    private const val SOGLIA_SCATTO = 2
+    /**
+     * Sotto questa soglia è un fotogramma lento, non uno scatto visibile.
+     *
+     * Alzata da 2 a 5 dopo il primo giro di misure: a 2 il log si riempiva di
+     * righe a ogni scorrimento in debug, dove qualche fotogramma perso è la
+     * norma e non vuol dire niente. Il riassunto ogni due secondi resta, ed è
+     * quello il numero da guardare.
+     */
+    private const val SOGLIA_SCATTO = 5
 
     private val callback = object : Choreographer.FrameCallback {
         override fun doFrame(frameTimeNanos: Long) {

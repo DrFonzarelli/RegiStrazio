@@ -87,7 +87,9 @@
             android:launchMode="singleTask"
             android:taskAffinity=""
             android:theme="@style/Theme.RegiStrazio.Sovrapposta"
-            android:windowSoftInputMode="adjustResize|stateVisible" />
+            android:windowSoftInputMode="adjustResize|stateVisible"
+            android:turnScreenOn="true"
+            android:showWhenLocked="true" />
 
         <!-- Play/pausa e chiusura dalla notifica. -->
         <receiver

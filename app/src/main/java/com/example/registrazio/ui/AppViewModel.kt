@@ -830,13 +830,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * e riusarne uno vecchio darebbe un errore proprio mentre si preme play.
      */
     private fun avviaDaMega(traccia: Traccia, da: Float) {
+        val nomeCartella = _state.value.cartelle.find { it.id == traccia.cartellaId }?.nome.orEmpty()
         playJob = viewModelScope.launch {
             // Se il file è già sul telefono si suona da lì: nessuna attesa, e
             // funziona anche senza rete. Il ramo locale non decifra niente —
             // su disco il file è già in chiaro.
             fileLocali[traccia.id]?.let { file ->
                 if (file.exists()) {
-                    player.riproduciFile(file, da, traccia.titolo)
+                    player.riproduciFile(file, da, traccia.titolo, nomeCartella)
                     tracciaCaricata = traccia.id
                     caricataDaFile = true
                     seguiPosizione(traccia.id)
@@ -876,7 +877,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 return@launch
             }
 
-            player.riproduci(url, chiave, da, traccia.titolo)
+            player.riproduci(url, chiave, da, traccia.titolo, nomeCartella)
             tracciaCaricata = traccia.id
             caricataDaFile = false
             seguiPosizione(traccia.id)
