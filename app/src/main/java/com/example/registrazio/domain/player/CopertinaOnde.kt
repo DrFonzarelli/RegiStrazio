@@ -2,67 +2,79 @@ package com.example.registrazio.domain.player
 
 import android.graphics.Bitmap
 import android.graphics.Canvas
-import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
 import kotlin.math.abs
 import kotlin.math.sin
 
 /**
- * La copertina quadrata della notifica: un'onda disegnata, al posto del nulla.
+ * L'equalizzatore del mini player, ridisegnato per lo spazio copertina della
+ * notifica: cinque barrette accent su **niente**.
  *
- * La notifica media tiene a sinistra uno spazio per la copertina dell'album. Un
- * brano di prova non ce l'ha, e lasciandolo vuoto il sistema ci mette un
- * quadrato grigio — è la parte che rendeva la notifica "grossolana" rispetto al
- * prototipo, che lì disegna un equalizzatore.
+ * ## Perché non è animato, e non può esserlo
  *
- * **Statica, non animata.** Quello spazio accetta una `Bitmap` e nient'altro:
- * il sistema la disegna una volta e non la ridisegna a sessanta fotogrammi al
- * secondo. L'onda del prototipo che ondeggia lì non è replicabile, e provarci
- * vorrebbe dire ridisegnare la notifica di continuo — rumore per il sistema e
- * batteria buttata.
+ * Quello spazio accetta una `Bitmap` e nient'altro. Il sistema la disegna una
+ * volta quando la notifica cambia, non sessanta volte al secondo: non è una
+ * superficie che possiamo ridipingere, è un'immagine che consegniamo. Farla
+ * ondeggiare vorrebbe dire ricostruire e ripubblicare la notifica intera a
+ * ogni fotogramma — il sistema la limiterebbe comunque, e nel frattempo
+ * ciucceremmo batteria per un'animazione che quasi nessuno sta guardando.
  *
- * **La forma dipende dal titolo**, non dal caso: la stessa traccia mostra
- * sempre la stessa onda, e due tracce diverse ne mostrano due diverse. Così
- * l'immagine dice qualcosa invece di essere decorazione pura, e scorrendo le
- * notifiche si riconosce il pezzo prima di leggerne il nome.
+ * Quindi: stessa forma, stessi colori, stesse proporzioni di
+ * `MiniPlayer.MiniEqualizer` — cinque barre, spaziatura larga quanto un quarto
+ * di barra, angoli tondi — ma ferme.
+ *
+ * ## Sfondo trasparente
+ *
+ * La prima versione riempiva il quadrato di crema, e sembrava una copertina
+ * finta. Senza sfondo restano le sole barrette, come nella barra in ascolto
+ * dell'app: il riquadro lo disegna il sistema con il proprio colore, e
+ * l'iconcina ci galleggia dentro.
+ *
+ * ## La forma dipende dal titolo
+ *
+ * Non dal caso: la stessa traccia mostra sempre lo stesso disegno, due tracce
+ * diverse ne mostrano due diversi. Con un valore casuale cambierebbe a ogni
+ * aggiornamento della notifica — cioè a ogni play, pausa e cambio di stato —
+ * e sfarfallerebbe senza dire niente.
  */
 object CopertinaOnde {
 
     private const val LATO = 256
-    private const val BARRE = 22
+    private const val BARRE = 5
 
-    /** Crema e scuro del logo: la notifica resta della stessa famiglia dell'app. */
-    private const val SFONDO = 0xFFF1E9E0.toInt()
-    private const val BARRA = 0xFF242726.toInt()
+    /** `accent` del tema chiaro: la stessa tinta delle barrette nell'app. */
+    private const val ACCENT = 0xFF3C6E64.toInt()
 
     fun per(titolo: String): Bitmap {
         val bitmap = Bitmap.createBitmap(LATO, LATO, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
-        canvas.drawColor(SFONDO)
+        // Niente `drawColor`: il quadrato resta trasparente.
 
-        val pennello = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = BARRA }
+        val pennello = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = ACCENT }
 
-        val margine = LATO * 0.14f
-        val larghezzaUtile = LATO - margine * 2
-        val spazio = larghezzaUtile * 0.035f
-        val larghezzaBarra = (larghezzaUtile - spazio * (BARRE - 1)) / BARRE
+        // Le barrette occupano poco più di un terzo del riquadro e stanno in
+        // mezzo: nella notifica si legge come un'icona, non come una copertina
+        // che riempie tutto.
+        val larghezzaTotale = LATO * 0.38f
+        val spazio = larghezzaTotale * 0.11f
+        val larghezzaBarra = (larghezzaTotale - spazio * (BARRE - 1)) / BARRE
+        val sinistra = (LATO - larghezzaTotale) / 2f
         val centro = LATO / 2f
-        val altezzaMax = LATO * 0.34f
+        val altezzaMax = LATO * 0.17f
+        val altezzaMin = LATO * 0.05f
 
-        // Il titolo fa da seme: `hashCode` di una stringa è stabile fra un
-        // avvio e l'altro, quindi la stessa traccia disegna sempre la stessa
-        // onda. Con `Random()` cambierebbe a ogni notifica.
+        // `hashCode` di una stringa è stabile fra un avvio e l'altro: la stessa
+        // traccia disegna sempre le stesse cinque barre.
         val seme = titolo.hashCode()
 
         for (i in 0 until BARRE) {
-            // Due seni di periodo diverso più il seme: basta a far sembrare
-            // un'onda invece di una scala, senza tirarsi dietro un generatore.
-            val onda = sin(i * 0.9f + seme % 7) * 0.5f + sin(i * 0.37f + seme % 11) * 0.3f
-            val altezza = (LATO * 0.06f + abs(onda) * altezzaMax).coerceAtMost(altezzaMax)
-            val x = margine + i * (larghezzaBarra + spazio)
+            val onda = sin(i * 1.4f + seme % 13) * 0.6f + sin(i * 0.6f + seme % 7) * 0.4f
+            val mezzaAltezza = (altezzaMin + abs(onda) * (altezzaMax - altezzaMin))
+                .coerceAtMost(altezzaMax)
+            val x = sinistra + i * (larghezzaBarra + spazio)
             canvas.drawRoundRect(
-                RectF(x, centro - altezza, x + larghezzaBarra, centro + altezza),
+                RectF(x, centro - mezzaAltezza, x + larghezzaBarra, centro + mezzaAltezza),
                 larghezzaBarra / 2f,
                 larghezzaBarra / 2f,
                 pennello
