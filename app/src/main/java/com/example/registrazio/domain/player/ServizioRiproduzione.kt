@@ -147,11 +147,16 @@ private class ProviderNotifica(private val context: Context) : MediaNotification
     ): MediaNotification {
         val player = mediaSession.player
         val suona = player.isPlaying
+        val titolo = player.mediaMetadata.title?.toString().orEmpty()
 
         val notifica = NotificationCompat.Builder(context, ServizioRiproduzione.CANALE)
             .setSmallIcon(R.drawable.ic_notifica)
-            .setContentTitle(player.mediaMetadata.title ?: "RegiStrazio")
+            .setContentTitle(titolo.ifBlank { "RegiStrazio" })
             .setContentText(player.mediaMetadata.artist ?: "")
+            // Il posto della copertina: lasciandolo vuoto il sistema ci mette
+            // un quadrato grigio, ed è la cosa che rendeva la notifica
+            // "grossolana" rispetto al prototipo.
+            .setLargeIcon(CopertinaOnde.per(titolo))
             .setContentIntent(mediaSession.sessionActivity)
             .setDeleteIntent(ComandiNotifica.intento(context, ComandiNotifica.FERMA))
             // Una notifica di stato non deve suonare né riallertare a ogni
