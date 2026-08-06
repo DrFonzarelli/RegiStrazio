@@ -1963,6 +1963,15 @@ giro, sempre gli stessi otto, che sono i propri documenti tornati indietro.
 Non faceva danni ma diceva una cosa falsa, e su un tasto che serve a capire se
 sei in pari è tutto quello che conta.
 
+**Il messaggio finale conta documenti, non gesti.** "Inviati: 1 traccia",
+"Ricevuti: 2 cartelle, 9 tracce". Mettere una stella e ascoltare la stessa
+traccia dieci volte fa **1 traccia**: stella, ascolti, durata e grafico sono
+campi *dentro* quel documento, e l'upload lo riscrive intero. Contare i gesti
+darebbe un numero più grande e più falso — non c'è nessun lavoro in più da
+fare. È la stessa regola del contatore dei pendenti, e per un giro i due
+messaggi hanno detto cose diverse: quello di sync sommava tutto in un "1
+caricato" che non diceva *cosa*.
+
 **Due cose non passano da Firestore, ed è voluto:**
 
 - **`mioVoto`** — la stella è di questo telefono. Il documento remoto porta solo

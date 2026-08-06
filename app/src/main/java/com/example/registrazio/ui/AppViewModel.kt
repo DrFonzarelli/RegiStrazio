@@ -582,6 +582,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
             esito.onSuccess { risultato ->
                 ricaricaDaArchivio()
+                // I profili arrivano col giro: la cache del Gate si aggiorna
+                // qui invece di richiederli una seconda volta.
+                risultato.profili.forEach { profiliStore.registraProfilo(it) }
+                if (risultato.profili.isNotEmpty()) {
+                    _state.update { it.copy(profiliDisponibili = profiliStore.profili()) }
+                }
                 mostra(riassunto(risultato))
             }
             esito.onFailure { errore ->
@@ -595,11 +601,25 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * Cos'è successo, per tipo di documento.
+     *
+     * "1 caricato" non dice niente a nessuno: nasconde se è partito un
+     * commento, una cartella o una traccia, che sono tre cose diverse per chi
+     * guarda. Il conteggio dei pendenti era già spezzato così — questo lo
+     * riallinea.
+     *
+     * Restano **documenti, non gesti**: mettere una stella e ascoltare la
+     * stessa traccia dieci volte fa "1 traccia", perché stella, ascolti e
+     * durata sono campi dentro quel documento e partono tutti insieme.
+     */
     private fun riassunto(esito: EsitoSync): String {
         val pezzi = buildList {
-            if (esito.caricati > 0) add("${esito.caricati} caricati")
-            if (esito.scaricati > 0) add("${esito.scaricati} ricevuti")
-            if (esito.falliti > 0) add("${esito.falliti} non riusciti")
+            if (esito.caricati.totale > 0) add("Inviati: ${esito.caricati.descrizione()}")
+            if (esito.ricevuti.totale > 0) add("Ricevuti: ${esito.ricevuti.descrizione()}")
+            if (esito.falliti > 0) {
+                add("${esito.falliti} non " + if (esito.falliti == 1) "riuscito" else "riusciti")
+            }
         }
         return if (pezzi.isEmpty()) "Già tutto sincronizzato" else pezzi.joinToString(" · ")
     }

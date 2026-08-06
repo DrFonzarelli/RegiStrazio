@@ -7,20 +7,51 @@ import com.example.registrazio.data.remote.MegaCrypto
 import com.example.registrazio.data.model.Utente
 
 /**
- * Cos'è successo in un giro di sincronizzazione, in numeri.
+ * Quanti documenti, divisi per tipo.
  *
- * Serve a dire all'utente qualcosa di più utile di "fatto": quanto è partito,
- * quanto è arrivato, e soprattutto quanto è rimasto indietro.
+ * **Documenti, non gesti**, ed è la stessa regola del contatore dei pendenti.
+ * Mettere una stella e ascoltare la stessa traccia dieci volte fa "1 traccia":
+ * stella, ascolti e durata sono campi *dentro* il documento traccia, e
+ * l'upload riscrive il documento intero. Un conteggio dei gesti direbbe un
+ * numero più grande e più falso — non c'è nessun lavoro in più da fare.
+ */
+data class ContoSync(
+    val cartelle: Int = 0,
+    val tracce: Int = 0,
+    val commenti: Int = 0,
+    val profili: Int = 0
+) {
+    val totale: Int get() = cartelle + tracce + commenti + profili
+
+    operator fun plus(altro: ContoSync) = ContoSync(
+        cartelle + altro.cartelle,
+        tracce + altro.tracce,
+        commenti + altro.commenti,
+        profili + altro.profili
+    )
+
+    /** "2 cartelle, 9 tracce" — vuoto se non c'è niente da dire. */
+    fun descrizione(): String = buildList {
+        if (cartelle > 0) add("$cartelle " + if (cartelle == 1) "cartella" else "cartelle")
+        if (tracce > 0) add("$tracce " + if (tracce == 1) "traccia" else "tracce")
+        if (commenti > 0) add("$commenti " + if (commenti == 1) "commento" else "commenti")
+        if (profili > 0) add("$profili " + if (profili == 1) "profilo" else "profili")
+    }.joinToString(", ")
+}
+
+/**
+ * Cos'è successo in un giro di sincronizzazione.
+ *
+ * Serve a dire all'utente qualcosa di più utile di "fatto": cosa è partito,
+ * cosa è arrivato, e soprattutto cosa è rimasto indietro.
  */
 data class EsitoSync(
-    val caricati: Int = 0,
-    val scaricati: Int = 0,
+    val caricati: ContoSync = ContoSync(),
+    val ricevuti: ContoSync = ContoSync(),
     val falliti: Int = 0,
-    /** Compilato solo se il giro si è fermato del tutto. */
-    val errore: String? = null
-) {
-    val riuscito: Boolean get() = errore == null
-}
+    /** I profili letti dal cloud, per aggiornare la cache del Gate. */
+    val profili: List<Utente> = emptyList()
+)
 
 /**
  * Il tasto Sincronizza, per esteso.
@@ -63,15 +94,22 @@ class SyncManager(
     ): EsitoSync {
         firestore.assicuraAccesso()
 
-        var scaricati = 0
-        var caricati = 0
+        var ricevuti = ContoSync()
+        var caricati = ContoSync()
         var falliti = 0
 
-        // Il proprio profilo per primo: senza, chi ha creato l'account su
-        // questo telefono non comparirebbe nell'elenco di recupero degli altri,
-        // e i suoi commenti resterebbero firmati da uno sconosciuto.
-        identita?.let {
-            runCatching { firestore.salvaProfilo(it) }
+        // I profili del gruppo, e il proprio fra questi. Senza, chi ha creato
+        // l'account su questo telefono non comparirebbe nell'elenco di recupero
+        // degli altri, e i suoi commenti resterebbero firmati da uno
+        // sconosciuto.
+        val profiliRemoti = runCatching { firestore.profili() }.getOrDefault(emptyList())
+
+        // Solo se manca o è cambiato. Riscriverlo a ogni giro funzionerebbe
+        // lo stesso, ma il messaggio finale direbbe "1 profilo caricato" per
+        // sempre, su un tasto che serve a capire cosa è successo davvero.
+        if (identita != null && profiliRemoti.none { suo -> suo.stessoDi(identita) }) {
+            runCatching { firestore.salvaProfilo(identita) }
+                .onSuccess { caricati += ContoSync(profili = 1) }
                 .onFailure { e -> Log.w(TAG, "profilo non caricato", e); falliti++ }
         }
 
@@ -79,7 +117,7 @@ class SyncManager(
 
         val cartelleRemote = firestore.cartelle()
         for (cartella in cartelleRemote) {
-            if (archivio.accettaDalCloud(cartella)) scaricati++
+            if (archivio.accettaDalCloud(cartella)) ricevuti += ContoSync(cartelle = 1)
         }
 
         // Le tracce si chiedono per cartella, e per **tutte** quelle che
@@ -89,13 +127,15 @@ class SyncManager(
         val idCartelle = (cartelleRemote.map { it.id } + archivio.cartelle().map { it.id }).distinct()
         for (cartellaId in idCartelle) {
             for (traccia in firestore.tracce(cartellaId)) {
-                if (archivio.accettaDalCloud(traccia, chiaviFile[traccia.id])) scaricati++
+                if (archivio.accettaDalCloud(traccia, chiaviFile[traccia.id])) {
+                    ricevuti += ContoSync(tracce = 1)
+                }
             }
         }
 
         val commentiRemoti = firestore.tuttiICommenti()
         for (commento in commentiRemoti) {
-            if (archivio.accettaDalCloud(commento)) scaricati++
+            if (archivio.accettaDalCloud(commento)) ricevuti += ContoSync(commenti = 1)
         }
         // Quello che qualcun altro ha cancellato sparisce anche qui. Solo fra
         // le righe già in pari col cloud: le altre non sono "sparite", non ci
@@ -106,19 +146,19 @@ class SyncManager(
 
         for (cartella in archivio.cartelleDaCaricare()) {
             runCatching { firestore.salvaCartella(cartella) }
-                .onSuccess { archivio.segnaCartellaCaricata(cartella.id); caricati++ }
+                .onSuccess { archivio.segnaCartellaCaricata(cartella.id); caricati += ContoSync(cartelle = 1) }
                 .onFailure { e -> Log.w(TAG, "cartella ${cartella.id} non caricata", e); archivio.segnaCartellaFallita(cartella.id); falliti++ }
         }
 
         for (traccia in archivio.tracceDaCaricare()) {
             runCatching { firestore.salvaTraccia(traccia) }
-                .onSuccess { archivio.segnaTracciaCaricata(traccia.id); caricati++ }
+                .onSuccess { archivio.segnaTracciaCaricata(traccia.id); caricati += ContoSync(tracce = 1) }
                 .onFailure { e -> Log.w(TAG, "traccia ${traccia.id} non caricata", e); archivio.segnaTracciaFallita(traccia.id); falliti++ }
         }
 
         for (commento in archivio.commentiDaCaricare()) {
             runCatching { firestore.salvaCommento(commento) }
-                .onSuccess { archivio.segnaCommentoCaricato(commento.id); caricati++ }
+                .onSuccess { archivio.segnaCommentoCaricato(commento.id); caricati += ContoSync(commenti = 1) }
                 .onFailure { e ->
                     Log.w(TAG, "commento ${commento.id} non caricato", e)
                     archivio.segnaCommentoFallito(commento.id); falliti++
@@ -133,17 +173,22 @@ class SyncManager(
 
         for ((tracciaId, commentoId) in archivio.commentiDaCancellare()) {
             runCatching { firestore.eliminaCommento(tracciaId, commentoId) }
-                .onSuccess { archivio.dimenticaCommento(commentoId); caricati++ }
+                .onSuccess { archivio.dimenticaCommento(commentoId); caricati += ContoSync(commenti = 1) }
                 .onFailure { e -> Log.w(TAG, "cancellazione non riuscita", e); falliti++ }
         }
 
         for (cartellaId in archivio.cartelleDaCancellare()) {
             runCatching { firestore.eliminaCartella(cartellaId) }
-                .onSuccess { archivio.dimenticaCartella(cartellaId); caricati++ }
+                .onSuccess { archivio.dimenticaCartella(cartellaId); caricati += ContoSync(cartelle = 1) }
                 .onFailure { e -> Log.w(TAG, "cancellazione non riuscita", e); falliti++ }
         }
 
-        return EsitoSync(caricati = caricati, scaricati = scaricati, falliti = falliti)
+        return EsitoSync(
+            caricati = caricati,
+            ricevuti = ricevuti,
+            falliti = falliti,
+            profili = profiliRemoti
+        )
     }
 
     /**
@@ -175,3 +220,7 @@ class SyncManager(
         const val TAG = "RegiStrazio"
     }
 }
+
+/** Stesso profilo e con gli stessi dati: non c'è niente da riscrivere. */
+private fun Utente.stessoDi(altro: Utente): Boolean =
+    appUid == altro.appUid && nome == altro.nome && colore == altro.colore
