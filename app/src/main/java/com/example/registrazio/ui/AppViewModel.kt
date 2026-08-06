@@ -1721,13 +1721,18 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     tracce = stato.tracce.filterNot { it.cartellaId == cartella.id } + arredate
                 )
             }
-            // SINCRONIZZATO, non LOCALE: nulla di finto deve finire nel badge
-            // del tasto Sincronizza, e tantomeno su Firestore.
+            // Cartella e tracce partono `LOCALE`, cioè da caricare: sono
+            // dati **veri**, il link MEGA esiste e i file pure. Tenerle fuori
+            // da Firestore lasciava il database incoerente — bastava ascoltare
+            // una traccia perché quella salisse da sola, con gli ascolti
+            // aggiornati, mentre la cartella che la contiene non c'era: un
+            // documento orfano che per gli altri non vuol dire niente.
+            //
+            // I commenti no: quelli sono finti, e restano `SINCRONIZZATO` per
+            // non farsi caricare mai.
             salva {
-                archivio.salvaCartella(cartella, StatoSync.SINCRONIZZATO)
-                archivio.sostituisciTracce(
-                    cartella.id, arredate, chiaviFile, StatoSync.SINCRONIZZATO
-                )
+                archivio.salvaCartella(cartella)
+                archivio.sostituisciTracce(cartella.id, arredate, chiaviFile)
                 commenti.forEach { archivio.salvaCommento(it) }
             }
         }

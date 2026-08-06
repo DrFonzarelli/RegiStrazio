@@ -1118,9 +1118,12 @@ cartella: in un file di dati non può starci. Quindi `CommentoDiProva.traccia`
 posizioni che non esistono si saltano. Aggiungere o rinominare file su MEGA
 non rompe niente.
 
-**Niente di finto arriva su Firestore.** Cartelle, tracce e commenti seminati
-nascono `SINCRONIZZATO`: il contatore dei pendenti li ignora e il push non li
-guarderà. Un arredamento caricato sul database vero non se ne andrebbe più.
+**Cartelle e tracce del seme vanno su Firestore, i commenti no.** Le prime sono
+dati veri — il link MEGA esiste, i file pure — e tenerle fuori lasciava il
+database incoerente: bastava ascoltare una traccia perché quella salisse da
+sola, con gli ascolti aggiornati, mentre la cartella che la contiene non
+c'era. I commenti finti invece nascono `SINCRONIZZATO` e non partono mai:
+Marco, che non esiste, resterebbe nella cronologia del gruppo per sempre.
 
 **Il seme scatta una volta sola**, e il segno che è scattato sta in
 `DatiDiProvaStore` (SharedPreferences), non fra le cartelle. Se stesse lì,
@@ -1952,6 +1955,13 @@ costruita *con lo stato vecchio* e, se coincide, non è cambiato niente.
 accettare la versione remota vorrebbe dire buttarla via proprio nel momento in
 cui l'utente ha chiesto di salvarla. La regola vive in
 `ArchivioLocale.accettaDalCloud` ed è la seconda legge del progetto.
+
+**E non riscrive quello che è già identico.** Prima confrontava solo lo stato:
+una riga `SINCRONIZZATO` veniva riscritta con la versione remota anche quando
+le due coincidevano, e contata come "ricevuta". Da qui un `8 ricevuti` a ogni
+giro, sempre gli stessi otto, che sono i propri documenti tornati indietro.
+Non faceva danni ma diceva una cosa falsa, e su un tasto che serve a capire se
+sei in pari è tutto quello che conta.
 
 **Due cose non passano da Firestore, ed è voluto:**
 

@@ -27,12 +27,19 @@ import com.example.registrazio.data.model.VotoStella
  * dei commit — va **rigenerato il link dalla cartella su MEGA**, che è l'unica
  * cosa che invalida davvero la chiave.
  *
- * ## Cosa non fa
+ * ## Cosa va su Firestore e cosa no
  *
- * Niente di tutto questo va su Firestore. I commenti nascono già
- * [com.example.registrazio.data.model.StatoSync.SINCRONIZZATO] proprio perché
- * il tasto Sincronizza li ignori: sono arredamento, e un arredamento caricato
- * sul database vero non se ne andrebbe più.
+ * **Cartelle e tracce sì**, come qualunque altra: il link MEGA è vero, i file
+ * esistono, e sono esattamente i dati che il gruppo si scambia. Tenerle fuori
+ * lasciava il database incoerente — bastava ascoltare una traccia perché
+ * quella salisse da sola, con gli ascolti aggiornati, mentre la cartella che
+ * la contiene non c'era.
+ *
+ * **I commenti no.** Quelli sono finti, e nascono già
+ * [com.example.registrazio.data.model.StatoSync.SINCRONIZZATO] perché il tasto
+ * Sincronizza li ignori: sono arredamento, e un arredamento caricato sul
+ * database vero non se ne andrebbe più — Marco, che non esiste, resterebbe
+ * nella cronologia del gruppo per sempre.
  */
 object DatiDiProva {
 

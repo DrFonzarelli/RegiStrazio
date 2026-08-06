@@ -204,8 +204,11 @@ class ArchivioLocale(context: Context) {
      * @return `true` se la riga è stata scritta.
      */
     suspend fun accettaDalCloud(cartella: Cartella): Boolean {
-        if (dao.statoCartella(cartella.id).haLavoroInSospeso()) return false
-        dao.salvaCartella(cartella.aEntita(StatoSync.SINCRONIZZATO))
+        val esistente = dao.cartellaPerId(cartella.id)
+        if (esistente?.statoSync.haLavoroInSospeso()) return false
+        val nuova = cartella.aEntita(StatoSync.SINCRONIZZATO)
+        if (nuova == esistente) return false
+        dao.salvaCartella(nuova)
         return true
     }
 
@@ -213,18 +216,37 @@ class ArchivioLocale(context: Context) {
      * Come sopra per una traccia, con un'eccezione: [Traccia.mioVoto] non passa
      * da Firestore. È la stella di *questo* telefono, e il documento remoto non
      * la conosce nemmeno — sovrascriverla con il valore vuoto che arriva dal
-     * cloud la cancellerebbe a ogni sincronizzazione.
+     * cloud la cancellerebbe a ogni sincronizzazione. Per lo stesso motivo il
+     * confronto si fa **dopo** averla rimessa al suo posto, o una traccia con
+     * una stella risulterebbe sempre diversa da sé stessa.
      */
     suspend fun accettaDalCloud(traccia: Traccia, chiave: MegaCrypto.ChiaveFile?): Boolean {
-        if (dao.statoTraccia(traccia.id).haLavoroInSospeso()) return false
-        val voto = dao.mioVoto(traccia.id) ?: traccia.mioVoto
-        dao.salvaTraccia(traccia.copy(mioVoto = voto).aEntita(chiave, StatoSync.SINCRONIZZATO))
+        val esistente = dao.tracciaPerId(traccia.id)
+        if (esistente?.statoSync.haLavoroInSospeso()) return false
+
+        val voto = esistente?.mioVoto ?: traccia.mioVoto
+        val nuova = traccia.copy(mioVoto = voto)
+            .aEntita(chiave, StatoSync.SINCRONIZZATO)
+            // La chiave AES non passa da Firestore, quindi il documento remoto
+            // non ne porta nessuna. Se chi chiama non ce l'ha in mano — la
+            // mappa in memoria si popola all'avvio e collegando le cartelle, ma
+            // una traccia arrivata dal cloud e mai vista qui non ci sta — la
+            // riga andrebbe riscritta **senza**, e da quel momento quella
+            // traccia non si potrebbe più decifrare: silenzio al play, e nessun
+            // errore che spieghi perché.
+            .let { if (it.chiaveAes == null) it.conChiaveDi(esistente) else it }
+
+        if (nuova == esistente) return false
+        dao.salvaTraccia(nuova)
         return true
     }
 
     suspend fun accettaDalCloud(commento: Commento): Boolean {
-        if (dao.statoCommento(commento.id).haLavoroInSospeso()) return false
-        dao.salvaCommento(commento.copy(statoSync = StatoSync.SINCRONIZZATO).aEntita())
+        val esistente = dao.commentoPerId(commento.id)
+        if (esistente?.statoSync.haLavoroInSospeso()) return false
+        val nuovo = commento.copy(statoSync = StatoSync.SINCRONIZZATO).aEntita()
+        if (nuovo == esistente) return false
+        dao.salvaCommento(nuovo)
         return true
     }
 
@@ -268,6 +290,11 @@ class ArchivioLocale(context: Context) {
         dao.svuotaCartelle()
     }
 }
+
+/** Riprende chiave e nonce da una riga precedente, se ce n'era una. */
+private fun TracciaEntity.conChiaveDi(precedente: TracciaEntity?): TracciaEntity =
+    if (precedente?.chiaveAes == null) this
+    else copy(chiaveAes = precedente.chiaveAes, nonce = precedente.nonce)
 
 /**
  * La riga porta un lavoro che Firestore non ha ancora visto.

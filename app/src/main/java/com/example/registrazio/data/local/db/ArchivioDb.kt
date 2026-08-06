@@ -128,22 +128,21 @@ interface ArchivioDao {
     suspend fun cancellaCommentoSincronizzatoDavvero(id: String)
 
     /**
-     * Lo stato di una riga, per sapere se il pull può sovrascriverla.
+     * La riga intera, per sapere se il pull ha davvero qualcosa da scrivere.
      *
-     * `null` quando la riga non c'è: quello che arriva da Firestore è nuovo.
+     * `null` quando non c'è: allora quello che arriva da Firestore è nuovo.
+     * Serve la riga completa e non il solo `statoSync`, perché il confronto va
+     * fatto sul contenuto: una versione remota identica a quella locale non è
+     * un aggiornamento, e riscriverla la conterebbe come tale.
      */
-    @Query("SELECT statoSync FROM cartelle WHERE id = :id")
-    suspend fun statoCartella(id: String): StatoSync?
+    @Query("SELECT * FROM cartelle WHERE id = :id")
+    suspend fun cartellaPerId(id: String): CartellaEntity?
 
-    @Query("SELECT statoSync FROM tracce WHERE id = :id")
-    suspend fun statoTraccia(id: String): StatoSync?
+    @Query("SELECT * FROM tracce WHERE id = :id")
+    suspend fun tracciaPerId(id: String): TracciaEntity?
 
-    @Query("SELECT statoSync FROM commenti WHERE id = :id")
-    suspend fun statoCommento(id: String): StatoSync?
-
-    /** Il voto personale non passa da Firestore: sopravvive a ogni pull. */
-    @Query("SELECT mioVoto FROM tracce WHERE id = :id")
-    suspend fun mioVoto(id: String): VotoStella?
+    @Query("SELECT * FROM commenti WHERE id = :id")
+    suspend fun commentoPerId(id: String): CommentoEntity?
 
     @Query("SELECT COUNT(*) FROM commenti WHERE statoSync IN ('LOCALE', 'DA_ELIMINARE', 'ERRORE')")
     suspend fun commentiDaSincronizzare(): Int
