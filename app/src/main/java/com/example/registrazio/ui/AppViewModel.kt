@@ -34,6 +34,7 @@ import com.example.registrazio.domain.player.TracciaInAscolto
 import com.example.registrazio.util.OrdineNaturale
 import com.example.registrazio.util.senzaRete
 import com.example.registrazio.util.trasferimentoFermo
+import com.google.firebase.FirebaseApp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -332,12 +333,40 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      */
     private fun aggiornaProfiliDalCloud() {
         viewModelScope.launch {
-            val remoti = runCatching { sync.profili() }.getOrNull() ?: return@launch
-            if (remoti.isEmpty()) return@launch
-            remoti.forEach { profiliStore.registraProfilo(it) }
-            _state.update { it.copy(profiliDisponibili = profiliStore.profili()) }
+            // Il primo contatto con Firebase di tutta la sessione, e quindi il
+            // posto giusto per dire in chiaro com'è andata. Senza questa riga,
+            // un progetto configurato male non lascia **nessuna** traccia nei
+            // log: l'app si comporta come se il cloud non esistesse, e da fuori
+            // non c'è modo di distinguere "non riesce a scrivere" da "non ci ha
+            // nemmeno provato".
+            Log.i(TAG, "Firebase: progetto=${progettoFirebase()}")
+
+            runCatching { sync.profili() }
+                .onSuccess { remoti ->
+                    Log.i(TAG, "Firestore raggiunto: ${remoti.size} profili nel cloud")
+                    if (remoti.isEmpty()) return@onSuccess
+                    remoti.forEach { profiliStore.registraProfilo(it) }
+                    _state.update { it.copy(profiliDisponibili = profiliStore.profili()) }
+                }
+                .onFailure { errore ->
+                    Log.w(TAG, "Firestore non raggiunto: ${spiegaErroreFirebase(errore)}", errore)
+                }
         }
     }
+
+    /**
+     * Il progetto Firebase a cui l'app sta parlando davvero.
+     *
+     * Viene da `google-services.json`, che non sta nel repository: è il campo
+     * che dice se si sta guardando in console lo stesso progetto su cui l'app
+     * scrive. Due progetti diversi si comportano esattamente come un progetto
+     * che non funziona — l'app scrive, la console resta vuota, e non c'è niente
+     * che non torni da nessuna delle due parti.
+     */
+    private fun progettoFirebase(): String =
+        runCatching { FirebaseApp.getInstance().options.projectId }
+            .getOrNull()
+            ?: "NESSUNO — google-services.json mancante o non applicato"
 
     /**
      * I download interrotti, ritrovati sul disco all'avvio.
