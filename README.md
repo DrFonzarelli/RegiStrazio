@@ -2077,6 +2077,46 @@ notifica di progresso perché sopravvivano davvero.
 
 ---
 
+#### 34. `derivedStateOf` evita le ricomposizioni, non i calcoli
+
+Scorrere una cartella con molte tracce scattava. Il colpevole era il blocco
+che decide se la barra in ascolto va mostrata:
+
+```kotlin
+val cardVisibile by remember {
+    derivedStateOf {
+        val tracce = state.tracce.filter { ... }.ordinate(state.ordinamento)
+        val indice = tracce.indexOfFirst { it.id == id }
+        val info = listaTracce.layoutInfo          // <- cambia a ogni frame
+        ...
+    }
+}
+```
+
+`derivedStateOf` serve a non far ricomporre nessuno quando il **risultato** non
+cambia, e quello lo faceva benissimo: `cardVisibile` è un booleano che si muove
+di rado. Ma il **corpo** si rivaluta ogni volta che cambia una sua dipendenza,
+e lì dentro c'era `layoutInfo`, che durante lo scorrimento cambia a ogni frame.
+Sessanta filtri e sessanta ordinamenti completi al secondo, per rispondere sì o
+no.
+
+*Fix:* fuori dal blocco tutto ciò che non dipende dallo scorrimento — la lista
+filtrata e ordinata, e la ricerca dell'indice — in `remember` con le loro
+chiavi vere (le tracce, l'ordinamento, la traccia in ascolto). Dentro resta
+solo il confronto con `layoutInfo`. La stessa lista serve anche a
+`FolderScreen`, che la ricalcolava per conto suo a ogni tick del cursore.
+
+*Attenzione alla chiave:* `remember(indiceInAscolto) { derivedStateOf { … } }`.
+Il valore estratto è un `Int` normale, non uno stato osservabile: senza chiave
+il blocco lo cattura una volta sola e continua a guardare la posizione della
+prima traccia ascoltata per sempre.
+
+*Da ricordare:* un `derivedStateOf` che legge `layoutInfo`, `scrollState` o
+qualsiasi cosa cambi a ogni frame è un pezzo di codice che gira a 60 Hz. Dentro
+ci va solo quello che deve girare a 60 Hz.
+
+---
+
 ### Trappole del progetto da tenere a mente
 
 **`google-services.json` non è nel repository, ed è voluto.** Sta solo in

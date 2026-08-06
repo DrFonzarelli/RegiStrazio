@@ -98,20 +98,38 @@ fun AppRoot(
             if (state.riproduzione.inRiproduzione) barraCollegata = true
         }
 
+        // Le tracce della cartella aperta, filtrate e ordinate **una volta**.
+        //
+        // Erano ricalcolate dentro il `derivedStateOf` qui sotto, che dipende
+        // da `layoutInfo` e quindi si rivaluta a ogni frame di scorrimento: un
+        // filtro e un ordinamento completo sessanta volte al secondo, che su
+        // una cartella con molte tracce si sente eccome. `derivedStateOf`
+        // evita le ricomposizioni inutili, non i calcoli inutili.
+        val tracceCartella = remember(state.tracce, state.ordinamento, schermata) {
+            (schermata as? Schermata.DettaglioCartella)?.let { s ->
+                state.tracce.filter { it.cartellaId == s.cartellaId }.ordinate(state.ordinamento)
+            } ?: emptyList()
+        }
+
+        // Anche la ricerca dell'indice sta fuori: cambia quando cambia la
+        // traccia in ascolto, non quando si scorre.
+        val indiceInAscolto = remember(tracceCartella, state.riproduzione.tracciaId) {
+            val id = state.riproduzione.tracciaId ?: return@remember -1
+            tracceCartella.indexOfFirst { it.id == id }
+        }
+
         // La card della traccia in ascolto è a schermo in questo momento?
-        val cardVisibile by remember {
+        // Qui dentro resta solo ciò che dipende davvero dallo scorrimento.
+        // La chiave non è decorativa: `indiceInAscolto` è un `Int` normale, e
+        // senza di essa il blocco lo catturerebbe una volta sola, continuando
+        // a guardare per sempre la posizione della prima traccia ascoltata.
+        val cardVisibile by remember(indiceInAscolto) {
             derivedStateOf {
-                val id = state.riproduzione.tracciaId ?: return@derivedStateOf false
-                val cartella = (state.schermata as? Schermata.DettaglioCartella) ?: return@derivedStateOf false
-                val tracce = state.tracce
-                    .filter { it.cartellaId == cartella.cartellaId }
-                    .ordinate(state.ordinamento)
-                val indice = tracce.indexOfFirst { it.id == id }
-                if (indice < 0) return@derivedStateOf false
+                if (indiceInAscolto < 0) return@derivedStateOf false
 
                 // +1: il primo elemento della lista è la sort bar
                 val info = listaTracce.layoutInfo
-                val card = info.visibleItemsInfo.find { it.index == indice + 1 }
+                val card = info.visibleItemsInfo.find { it.index == indiceInAscolto + 1 }
                     ?: return@derivedStateOf false
 
                 // Serve che se ne veda più di un terzo, come la soglia 0.35
@@ -228,9 +246,10 @@ fun AppRoot(
                         )
 
                         is Schermata.DettaglioCartella -> {
-                            val tracce = state.tracce
-                                .filter { it.cartellaId == schermata.cartellaId }
-                                .ordinate(state.ordinamento)
+                            // Già filtrate e ordinate sopra: rifarlo qui
+                            // significherebbe ripetere il lavoro a ogni tick
+                            // del cursore mentre una traccia suona.
+                            val tracce = tracceCartella
                             val scaricate = tracce.count { it.scaricata }
 
                             // Lo stato del tasto in cima si legge dalle tracce
