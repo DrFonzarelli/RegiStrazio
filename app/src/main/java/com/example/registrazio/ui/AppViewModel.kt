@@ -344,6 +344,23 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             runCatching { sync.profili() }
                 .onSuccess { remoti ->
                     Log.i(TAG, "Firestore raggiunto: ${remoti.size} profili nel cloud")
+
+                    // Il proprio profilo, se lassù non c'è.
+                    //
+                    // Prima veniva caricato **solo** al momento della creazione
+                    // dell'account: chi ne aveva già uno — cioè chiunque abbia
+                    // usato l'app prima che Firestore esistesse — non lo avrebbe
+                    // mandato mai più, e sarebbe rimasto invisibile agli altri
+                    // per sempre. Un passaggio che avviene una volta sola nella
+                    // vita dell'app non può essere l'unico modo di far arrivare
+                    // un dato che deve esserci.
+                    val io = _state.value.identita
+                    if (io != null && remoti.none { it.appUid == io.appUid }) {
+                        runCatching { sync.caricaProfilo(io) }
+                            .onSuccess { Log.i(TAG, "profilo mancante caricato: ${io.nome}") }
+                            .onFailure { e -> Log.w(TAG, "profilo non caricato", e) }
+                    }
+
                     if (remoti.isEmpty()) return@onSuccess
                     remoti.forEach { profiliStore.registraProfilo(it) }
                     _state.update { it.copy(profiliDisponibili = profiliStore.profili()) }

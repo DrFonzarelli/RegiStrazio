@@ -158,6 +158,19 @@ class SyncManager(
         return firestore.profili()
     }
 
+    /**
+     * Manda su un profilo da solo, fuori dal giro grande.
+     *
+     * Serve all'avvio, quando ci si accorge che il proprio non è nel cloud.
+     * Non passa da [sincronizza] perché quello è un'operazione che l'utente
+     * chiede: farla partire da sola all'apertura vorrebbe dire scaricare e
+     * caricare tutto senza che nessuno l'abbia domandato.
+     */
+    suspend fun caricaProfilo(utente: Utente) {
+        firestore.assicuraAccesso()
+        firestore.salvaProfilo(utente)
+    }
+
     private companion object {
         const val TAG = "RegiStrazio"
     }
