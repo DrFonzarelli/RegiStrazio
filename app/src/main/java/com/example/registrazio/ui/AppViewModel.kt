@@ -758,14 +758,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
         val corrente = _state.value.riproduzione.tracciaId
         val posto = elenco.indexOfFirst { it.id == corrente }
-        // Nessuna traccia in ascolto: "avanti" parte dalla prima, "indietro"
-        // dall'ultima. È l'unico modo di dare un senso a un salto che non ha
-        // un punto di partenza.
-        val destinazione =
-            if (posto < 0) (if (passo > 0) 0 else elenco.lastIndex)
-            else ((posto + passo) % elenco.size + elenco.size) % elenco.size
-
-        val traccia = elenco[destinazione]
+        val traccia = elenco[postoDopoIlSalto(posto, passo, elenco.size)]
 
         // Cambiando cartella lo si dice: il titolo in cima cambia da solo, ma
         // chi ha lo schermo bloccato o sta guardando altro non lo vedrebbe.
@@ -2073,4 +2066,25 @@ fun List<Traccia>.ordinate(modo: Ordinamento): List<Traccia> = when (modo) {
     Ordinamento.PREFERITE -> sortedWith(
         compareByDescending<Traccia> { it.punteggio }.thenBy { indexOf(it) }
     )
+}
+
+/**
+ * Dove si finisce saltando di [passo] posti da [posto], su [quante] tracce.
+ *
+ * Sta fuori dal ViewModel perché è aritmetica pura, e l'aritmetica pura si
+ * prova sulla JVM senza telefono — che è l'unico modo di sapere se i casi
+ * limite tornano davvero invece di scoprirlo premendo un tasto trenta volte.
+ *
+ * @param posto posizione attuale, `-1` se non c'è niente in ascolto: allora
+ *   "avanti" parte dalla prima traccia e "indietro" dall'ultima. È l'unico modo
+ *   di dare un senso a un salto che non ha un punto di partenza.
+ *
+ * Il doppio `%` con il `+ quante` in mezzo serve al verso negativo: in Kotlin
+ * `-1 % 5` fa `-1`, non `4`, e senza quel giro andare indietro dalla prima
+ * traccia darebbe un indice fuori dall'elenco.
+ */
+internal fun postoDopoIlSalto(posto: Int, passo: Int, quante: Int): Int {
+    require(quante > 0) { "nessuna traccia fra cui saltare" }
+    if (posto < 0) return if (passo > 0) 0 else quante - 1
+    return ((posto + passo) % quante + quante) % quante
 }

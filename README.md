@@ -2042,6 +2042,14 @@ della libreria si è — sembrerebbe rotto.
 > strada non è duplicare la logica nel receiver — è farla vivere sotto il
 > ViewModel, dove il servizio possa raggiungerla.
 
+**L'aritmetica del salto è provata sulla JVM.** `postoDopoIlSalto` sta fuori
+dal ViewModel — è un calcolo puro, e `SaltoTracciaTest` ne copre i casi limite:
+il giro completo nei due versi, l'elenco da una traccia sola, il salto senza
+niente in ascolto. Serve soprattutto per il verso negativo: in Kotlin `-1 % 5`
+fa `-1`, non `4`, e senza il doppio `%` andare indietro dalla prima traccia
+darebbe un indice fuori dall'elenco — cioè un crash sul tasto della notifica,
+dove nessuno vedrebbe cos'è andato storto.
+
 **Domanda aperta:** a fine traccia la riproduzione **si ferma**, non passa alla
 successiva. È il comportamento di prima e non l'ho cambiato, perché su
 registrazioni di prove può essere voluto — si ascolta una take e ci si vuole
